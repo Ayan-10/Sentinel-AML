@@ -112,7 +112,7 @@ tested from both sides rather than at a convenient midpoint.
 |---|---|---|
 | **React frontend** | Descoped against the clock. The problem statement marks it *optional but recommended*. | `GET /api/v1/dashboard/stats` and `/dashboard/heatmap` are implemented and return exactly the aggregates a UI would consume. Swagger UI drives the full demo. |
 | **API / RBAC integration tests** | Time. | RBAC verified manually (403/401/200, §E). Automating it is the first test to add next. |
-| **Docker build not executed** | The Docker daemon was unavailable throughout the build session. | [`Dockerfile`](../Dockerfile) and [`docker-compose.yml`](../docker-compose.yml) are written (multi-stage, non-root, healthcheck-gated) but `docker compose up --build` is **unverified**. The local path is verified. |
+| **~~Docker build not executed~~** | — | ✅ **Now verified.** `docker compose up --build` builds and runs the full stack; API reports healthy, seed loads, all six rules fire, RBAC enforced. See [DEMO.md § Running with Docker](DEMO.md#0-start). |
 | **Kafka streaming** | Extension idea, explicitly deferred to phase 2. | The [`TransactionIngestPort`](../src/main/java/com/meridiantrust/sentinel/ingestion/port/TransactionIngestPort.java) seam exists today, so a Kafka adapter is additive — no rule, validator or persistence code would change. |
 
 ### One judgement call worth your attention

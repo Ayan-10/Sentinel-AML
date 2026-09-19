@@ -30,20 +30,40 @@ Built to the supplied problem statement (`Sentinel_AML__Building_Real-Time_Money
 The bulk figure is printed on every startup by `SeedDataLoader` and returned in the
 `durationMs` field of every ingestion response — it is measured, not asserted.
 
+Alert counts vary by a few dozen between runs (a Dockerised run measured 2,587 alerts in
+2,313 ms). The generated data is deterministic, but transaction timestamps are anchored to
+start time, so the 24-hour and daily window buckets fall differently on each run. Both figures
+sit far inside the 2-minute budget.
+
 ---
 
 ## Setup instructions
 
-### Option A — Docker (nothing but Docker required)
+### Option A — Docker (recommended; nothing but Docker required)
 
 ```bash
 cp .env.example .env
 docker compose up --build
 ```
 
-Postgres starts, the API waits for a **real** healthcheck (not merely for the container to
-exist), Flyway migrates, and the synthetic dataset loads. When the log prints
-`SENTINEL SEED COMPLETE`, the alert queue is already populated.
+That is the whole setup. The build runs **inside** Docker, so no local JDK, Gradle or Postgres
+is needed. Two containers start:
+
+| Container | Port | Role |
+|---|---|---|
+| `sentinel-api` | `8080` | Spring Boot application |
+| `sentinel-db` | `5433` → 5432 | PostgreSQL 16 (mapped off 5432 to avoid clashing with a local install) |
+
+The API waits on a genuine Postgres healthcheck rather than merely on the container existing,
+then Flyway migrates and the synthetic dataset loads through the real ingestion path. When the
+log prints `SENTINEL SEED COMPLETE` the alert queue is already populated — roughly 45 seconds
+from a cold `docker compose up --build`.
+
+```bash
+docker compose ps          # both services should read "healthy"
+docker compose logs -f sentinel-api
+docker compose down -v     # stop and discard the database volume
+```
 
 ### Option B — Local JDK 17 + existing Postgres
 
