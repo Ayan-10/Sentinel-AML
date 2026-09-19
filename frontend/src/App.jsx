@@ -4,6 +4,7 @@ import AlertQueue from './views/AlertQueue.jsx';
 import Heatmap from './views/Heatmap.jsx';
 import Timeline from './views/Timeline.jsx';
 import Cases from './views/Cases.jsx';
+import Productivity from './views/Productivity.jsx';
 import { ErrorBox } from './shared.jsx';
 
 const DEMO_USERS = [
@@ -17,6 +18,7 @@ const TABS = [
   { id: 'heatmap',  label: 'Risk heatmap' },
   { id: 'timeline', label: 'Customer timeline' },
   { id: 'cases',    label: 'Cases' },
+  { id: 'productivity', label: 'Productivity' },
 ];
 
 function Login({ onSignIn }) {
@@ -116,6 +118,7 @@ export default function App() {
         {tab === 'heatmap'  && <Heatmap onOpenTimeline={openTimeline} />}
         {tab === 'timeline' && <Timeline customerId={focusCustomer} onCustomerChange={setFocusCustomer} />}
         {tab === 'cases'    && <Cases />}
+        {tab === 'productivity' && <Productivity />}
       </main>
     </>
   );

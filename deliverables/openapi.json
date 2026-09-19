@@ -922,6 +922,40 @@
                 }
             }
         },
+        "/api/v1/dashboard/productivity": {
+            "get": {
+                "tags": [
+                    "Dashboard"
+                ],
+                "summary": "Analyst productivity metrics",
+                "description": "Operational health of the monitoring programme, as distinct from what it\nhas found: false-positive rate, mean and median time to disposition,\ndisposition breakdown, alert volume trend, and the **false-positive rate\nper rule** \u2014 the figure that names which rule to retune.\n\nThe false-positive rate is `null`, not zero, when nothing has been\ndisposed yet: a rate over zero cases is unknown, and reporting 0% would\nsuggest a perfectly precise queue.\n",
+                "operationId": "productivity",
+                "parameters": [
+                    {
+                        "name": "trendDays",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int32",
+                            "default": 90
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ProductivityMetrics"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/dashboard/heatmap": {
             "get": {
                 "tags": [
@@ -2291,6 +2325,106 @@
                         "items": {
                             "type": "string"
                         }
+                    }
+                }
+            },
+            "DailyAlertVolume": {
+                "type": "object",
+                "description": "Alerts detected on one day.",
+                "properties": {
+                    "day": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "alertCount": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                }
+            },
+            "ProductivityMetrics": {
+                "type": "object",
+                "description": "Operational metrics for the monitoring programme.",
+                "properties": {
+                    "totalAlerts": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "disposedAlerts": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "openAlerts": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "falsePositiveRatePct": {
+                        "type": "number",
+                        "format": "double",
+                        "description": "Disposed alerts closed as FALSE_POSITIVE, as a percentage of all disposed alerts. Null when nothing has been disposed yet \u2014 a rate over zero cases is not 0%, it is unknown."
+                    },
+                    "avgHoursToDisposition": {
+                        "type": "number",
+                        "format": "double",
+                        "description": "Mean hours from detection to disposition"
+                    },
+                    "medianHoursToDisposition": {
+                        "type": "number",
+                        "format": "double",
+                        "description": "Median hours to disposition. Reported alongside the mean because a handful of long-running investigations skew an average badly."
+                    },
+                    "escalatedToSar": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Alerts escalated for SAR filing"
+                    },
+                    "dispositionBreakdown": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer",
+                            "format": "int64"
+                        },
+                        "description": "Count of disposed alerts by outcome"
+                    },
+                    "falsePositiveRateByRule": {
+                        "type": "array",
+                        "description": "False-positive rate per rule \u2014 identifies which rule is generating noise and should be retuned. Rules with too small a disposed sample report a null rate rather than a misleading one.",
+                        "items": {
+                            "$ref": "#/components/schemas/RuleQuality"
+                        }
+                    },
+                    "alertVolumeTrend": {
+                        "type": "array",
+                        "description": "Alerts detected per day, oldest first",
+                        "items": {
+                            "$ref": "#/components/schemas/DailyAlertVolume"
+                        }
+                    }
+                }
+            },
+            "RuleQuality": {
+                "type": "object",
+                "description": "Per-rule alert quality.",
+                "properties": {
+                    "ruleCode": {
+                        "type": "string"
+                    },
+                    "disposed": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "falsePositives": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "falsePositiveRatePct": {
+                        "type": "number",
+                        "format": "double",
+                        "description": "Null when too few alerts have been disposed for the rate to mean anything. A rate over three cases is noise, and publishing it would rank a precise rule as though it were a noisy one."
+                    },
+                    "sufficientSample": {
+                        "type": "boolean",
+                        "description": "False when the sample is below the reporting threshold"
                     }
                 }
             },

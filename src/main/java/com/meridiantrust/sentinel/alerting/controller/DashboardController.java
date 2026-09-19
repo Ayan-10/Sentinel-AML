@@ -2,7 +2,9 @@ package com.meridiantrust.sentinel.alerting.controller;
 
 import com.meridiantrust.sentinel.customer.model.Customer;
 
+import com.meridiantrust.sentinel.alerting.model.ProductivityMetrics;
 import com.meridiantrust.sentinel.alerting.repository.AlertRepository;
+import com.meridiantrust.sentinel.alerting.service.ProductivityService;
 import com.meridiantrust.sentinel.alerting.model.AlertStatus;
 import com.meridiantrust.sentinel.casemanagement.repository.CaseRepository;
 import com.meridiantrust.sentinel.casemanagement.model.CaseStatus;
@@ -13,6 +15,7 @@ import com.meridiantrust.sentinel.transaction.repository.TransactionRepository;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -38,17 +41,37 @@ public class DashboardController {
     private final TransactionRepository transactionRepository;
     private final CustomerRepository customerRepository;
     private final DetectionEngine detectionEngine;
+    private final ProductivityService productivityService;
 
     public DashboardController(AlertRepository alertRepository,
                                CaseRepository caseRepository,
                                TransactionRepository transactionRepository,
                                CustomerRepository customerRepository,
-                               DetectionEngine detectionEngine) {
+                               DetectionEngine detectionEngine,
+                               ProductivityService productivityService) {
         this.alertRepository = alertRepository;
         this.caseRepository = caseRepository;
         this.transactionRepository = transactionRepository;
         this.customerRepository = customerRepository;
         this.detectionEngine = detectionEngine;
+        this.productivityService = productivityService;
+    }
+
+    @GetMapping("/productivity")
+    @Operation(summary = "Analyst productivity metrics",
+            description = """
+                    Operational health of the monitoring programme, as distinct from what it
+                    has found: false-positive rate, mean and median time to disposition,
+                    disposition breakdown, alert volume trend, and the **false-positive rate
+                    per rule** — the figure that names which rule to retune.
+
+                    The false-positive rate is `null`, not zero, when nothing has been
+                    disposed yet: a rate over zero cases is unknown, and reporting 0% would
+                    suggest a perfectly precise queue.
+                    """)
+    public ProductivityMetrics productivity(
+            @RequestParam(required = false, defaultValue = "90") Integer trendDays) {
+        return productivityService.metrics(trendDays);
     }
 
     @GetMapping("/stats")

@@ -16,12 +16,12 @@ then work down this page.
 | **D1** | Working Spring Boot application, source in a Git repository | ⚠️ **See note** | App: `./gradlew bootRun` → boots in ~2.8 s. Repo initialised (`.git` present, `.gitignore` configured, 142 files staged) but **left uncommitted at the user's explicit instruction**. One `git commit` completes this row. |
 | **D2** | Database schema / ERD with migration scripts | ✅ | Migrations: [`src/main/resources/db/migration/V1__core_schema.sql`](../src/main/resources/db/migration/V1__core_schema.sql), [`V2__reference_data.sql`](../src/main/resources/db/migration/V2__reference_data.sql). ERD: [README § Database schema & ERD](../README.md#database-schema--erd). Applied automatically by Flyway on startup. |
 | **D3** | Seed/synthetic dataset — customers, accounts, transactions covering **≥ 3** laundering typologies | ✅ **6 typologies** | Data files: [`deliverables/seed-data/`](seed-data/) — 500 customers, 737 accounts, 10,000 transactions. Generator: [`seed/SyntheticDataGenerator.java`](../src/main/java/com/meridiantrust/sentinel/seed/SyntheticDataGenerator.java), typologies planted by [`seed/TypologyPlanter.java`](../src/main/java/com/meridiantrust/sentinel/seed/TypologyPlanter.java). See §C below. |
-| **D4** | Documented REST API (OpenAPI/Swagger spec) | ✅ | Live: http://localhost:8080/swagger-ui.html · Spec file: [`deliverables/openapi.json`](openapi.json) — **28 paths, 35 schemas**, every endpoint annotated with roles, status codes and examples. |
-| **D5** | Unit tests covering detection rule logic | ✅ **59 passing** | `./gradlew test`. Sources: [`src/test/java/.../detection/rules/`](../src/test/java/com/meridiantrust/sentinel/detection/rules/). Boundary matrix in §D below. |
+| **D4** | Documented REST API (OpenAPI/Swagger spec) | ✅ | Live: http://localhost:8080/swagger-ui.html · Spec file: [`deliverables/openapi.json`](openapi.json) — **29 paths, 38 schemas**, every endpoint annotated with roles, status codes and examples. |
+| **D5** | Unit tests covering detection rule logic | ✅ **68 passing** | `./gradlew test`. Sources: [`src/test/java/.../detection/rules/`](../src/test/java/com/meridiantrust/sentinel/detection/rules/). Boundary matrix in §D below. |
 | **D6** | README explaining **architecture**, **setup instructions**, and **rule configuration approach** | ✅ | [`README.md`](../README.md) — all three mandated sections present and self-contained: [Architecture](../README.md#architecture), [Setup](../README.md#setup-instructions), [Rule configuration](../README.md#rule-configuration-approach). |
 | **D7** | Demo walkthrough showing ingestion → detection → alert → case disposition | ✅ | [`deliverables/DEMO.md`](DEMO.md) — a scripted, copy-pasteable walkthrough of the full flow against the seeded data. |
 | **§C** | Frontend/dashboard — alert queue, risk heatmap, customer timeline, case detail (*optional but recommended* in the brief) | ✅ **Delivered** | **http://localhost:3000** — React 18 + Vite, served by `nginx` as the `sentinel-web` container. All four required views present; see [§C2](#c2-frontend--dashboard-problem-statement-c--optional-but-recommended). |
-| **Ext.** | Extension idea — automated SAR draft generation (*extension ideas* in the brief) | ✅ **Delivered** | `GET /api/v1/cases/{ref}/sar-draft` · UI: Cases → **Generate SAR draft**. 1 of 6 extension ideas attempted; the other five are listed in [§G](#g-extension-ideas--status-of-all-six). |
+| **Ext.** | Extension ideas — automated **SAR draft generation** and **analyst productivity metrics** | ✅ **2 of 6 delivered** | SAR: `GET /api/v1/cases/{ref}/sar-draft`. Productivity: `GET /api/v1/dashboard/productivity` + the *Productivity* tab. Status of all six in [§G](#g-extension-ideas--status-of-all-six). |
 
 > **D1 note:** the repository is initialised and every file is staged, but no commit exists because
 > the user instructed "do not commit or push". This is the single outstanding item and it is one
@@ -140,9 +140,61 @@ URL rule. Read-only: it creates no rows and alters no alert, case or disposition
 
 ---
 
+## C4. Extension delivered — analyst productivity metrics
+
+The brief lists *"an analyst productivity dashboard with metrics (alert volume trends,
+false-positive rate, average time-to-disposition)"*. **Delivered**, with all three named metrics.
+
+| | |
+|---|---|
+| Endpoint | `GET /api/v1/dashboard/productivity?trendDays=90` |
+| Role | ANALYST |
+| Source | [`ProductivityCalculator`](../src/main/java/com/meridiantrust/sentinel/alerting/service/ProductivityCalculator.java) · [`ProductivityService`](../src/main/java/com/meridiantrust/sentinel/alerting/service/ProductivityService.java) |
+| UI | **Productivity** tab |
+| Tests | 9 unit tests on the calculator |
+
+Live output on the seeded dataset:
+
+```
+FP rate overall: 82.03 %   median 28.66 h   mean 45.4 h   escalated to SAR 43
+
+false-positive rate by rule
+  CTR_THRESHOLD             86.41%   (725/839)
+  BEHAVIORAL_DEVIATION      58.82%   (90/153)
+  HIGH_RISK_JURISDICTION     n=3 — suppressed
+  ROUND_AMOUNT_PATTERN       n=1 — suppressed
+```
+
+**The per-rule rate is the one that drives action.** An overall 82% tells a compliance officer
+the queue is noisy; `CTR_THRESHOLD at 86.41% over 839 disposed alerts` tells them *which control
+to retune* — and that retuning is one `PATCH` away (§B, rule config). The two features compose.
+
+**Two deliberate refusals to report a number:**
+
+- A rate over **zero** disposed alerts is reported as `null`, not `0%`. Zero would tell a reader
+  the queue is perfectly precise, which is the opposite of what an empty sample means.
+- A per-rule rate over **fewer than 20** disposed alerts is suppressed. Without that floor,
+  `HIGH_RISK_JURISDICTION` publishes "66.7%" off two false positives in three cases and outranks
+  a genuinely noisy rule with a thousand — sending someone to retune the wrong control. It sorts
+  last with its sample size shown instead.
+
+**Mean *and* median time-to-disposition** are both reported. The brief asks only for the average,
+but on this data the mean (45.4 h) sits well above the median (28.7 h): a minority of long
+investigations stretches it. Reporting the average alone would misrepresent a typical alert.
+
+**Seeded history.** [`DispositionSeeder`](../src/main/java/com/meridiantrust/sentinel/seed/DispositionSeeder.java)
+backfills a realistic worked history — 39% of alerts disposed, per-rule false-positive rates that
+mirror how these controls actually behave, and detection times backdated to spread the volume
+trend over 91 days. Without it every metric would read empty on a fresh boot, and a reviewer
+could not tell a correct zero from a broken query. It is idempotent and runs only while seeding,
+and every seeded disposition writes an audit row, so the "every transition is attributable"
+guarantee holds for backfilled history too.
+
+---
+
 ## D. Unit tests (D5) — rules tested at their boundaries
 
-`./gradlew test` → **59 tests, 0 failures.** The boundary *is* the rule, so each condition is
+`./gradlew test` → **68 tests, 0 failures.** The boundary *is* the rule, so each condition is
 tested from both sides rather than at a convenient midpoint.
 
 | Test class | Cases |
@@ -155,6 +207,7 @@ tested from both sides rather than at a convenient midpoint.
 | [`RoundAmountPatternRuleTest`](../src/test/java/com/meridiantrust/sentinel/detection/rules/RoundAmountPatternRuleTest.java) | 3 round → yes · mixed → no · below floor → no |
 | [`RiskScoringServiceTest`](../src/test/java/com/meridiantrust/sentinel/alerting/RiskScoringServiceTest.java) | base weight · customer risk + PEP uplift · clamping at 100 · log-scaled magnitude · recurrence cap · **noisy-OR does not saturate** · monotonicity · ordering preserved |
 | [`PiiMaskerTest`](../src/test/java/com/meridiantrust/sentinel/common/PiiMaskerTest.java) | names · identifiers · emails · phones · null and short-value edge cases |
+| [`ProductivityCalculatorTest`](../src/test/java/com/meridiantrust/sentinel/alerting/ProductivityCalculatorTest.java) | unknown rate is null not zero · FP rate · **mean vs median divergence** · even-set median · per-rule ranking · **small sample suppressed and sorted last** · SAR counted separately · negative interval from clock skew excluded |
 | [`SarNarrativeComposerTest`](../src/test/java/com/meridiantrust/sentinel/sar/SarNarrativeComposerTest.java) | narrative essentials · alert explanations quoted verbatim · PEP called out · singular/plural wording · **no unsubstituted format placeholder reaches a regulator** · false positive → "do NOT file" |
 
 ---
@@ -217,7 +270,7 @@ delivered**. Stated in full so the position is unambiguous rather than inferred:
 | 2 | Network/graph visualisation of linked accounts and flows | ❌ Not attempted. **Blocked by the data, not the code:** the seed generator writes counterparty accounts as synthetic references, so **0 transactions currently link to another account in the system**. A graph would render empty; delivering this means extending the generator to create genuine account-to-account chains first. |
 | 3 | Kafka + Spring Cloud Stream real-time pipeline | ⚠️ **Partial.** Sub-second streaming alerting *is* delivered over REST (`POST /api/v1/ingestion/transactions`, measured at 5 ms), and [`TransactionIngestPort`](../src/main/java/com/meridiantrust/sentinel/ingestion/port/TransactionIngestPort.java) is a real hexagonal seam so a Kafka adapter is additive. But there is **no broker and no Spring Cloud Stream** — the seam is architecture, not the extension. |
 | 4 | **Automated SAR draft generation** | ✅ **Delivered** — see [§C3](#c3-extension-delivered--automated-sar-draft-generation). |
-| 5 | Analyst productivity dashboard (volume trends, false-positive rate, time-to-disposition) | ⚠️ **Partial.** `/dashboard/stats` and `/dashboard/heatmap` return real aggregates and drive the UI, but the three metrics the brief names specifically are **not** implemented. The data exists (`audit_log` holds every transition with timestamps; `alerts` holds dispositions), so these are queries away — but on a fresh boot almost nothing is disposed, so they would read as zeroes without seeding realistic dispositions first. |
+| 5 | **Analyst productivity dashboard** (volume trends, false-positive rate, time-to-disposition) | ✅ **Delivered** — see [§C4](#c4-extension-delivered--analyst-productivity-metrics). |
 | 6 | Configurable rule versioning / A-B testing of thresholds | ❌ Not attempted. Rule changes *are* runtime-tunable and fully audited with a before/after snapshot (§B, rule config), but there is no versioning, no experiment assignment and no impact measurement. |
 
 **Why #4 was the one chosen.** It had the best ratio of effort to value: every input already

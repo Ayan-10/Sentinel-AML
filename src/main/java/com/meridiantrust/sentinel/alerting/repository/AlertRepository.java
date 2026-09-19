@@ -3,6 +3,7 @@ package com.meridiantrust.sentinel.alerting.repository;
 import com.meridiantrust.sentinel.alerting.model.Alert;
 import com.meridiantrust.sentinel.alerting.model.AlertStatus;
 
+import com.meridiantrust.sentinel.alerting.model.DispositionRecord;
 import com.meridiantrust.sentinel.common.model.Severity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -10,6 +11,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -56,4 +58,22 @@ public interface AlertRepository extends JpaRepository<Alert, Long> {
            group by a.customerId, a.typology
            """)
     List<Object[]> heatmapData();
+
+    /**
+     * Disposed alerts only, projected to what the productivity calculation
+     * needs. Restricting to disposed rows keeps this proportional to the work
+     * actually completed rather than to the whole alert table.
+     */
+    @Query("select new com.meridiantrust.sentinel.alerting.model.DispositionRecord("
+         + "a.ruleCode, a.disposition, a.firstDetectedAt, a.disposedAt) "
+         + "from Alert a where a.disposition is not null")
+    List<DispositionRecord> findDispositionRecords();
+
+    /**
+     * Detection timestamps for the volume trend, bounded by a window so the
+     * result set stays proportional to the reporting period rather than to the
+     * lifetime of the system.
+     */
+    @Query("select a.firstDetectedAt from Alert a where a.firstDetectedAt >= :from")
+    List<Instant> findDetectionTimesSince(@Param("from") Instant from);
 }

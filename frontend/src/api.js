@@ -41,6 +41,7 @@ async function request(path, options = {}) {
 export const api = {
   stats: () => request('/dashboard/stats'),
   heatmap: () => request('/dashboard/heatmap'),
+  productivity: () => request('/dashboard/productivity'),
 
   alerts: (params = {}) => {
     const q = new URLSearchParams({

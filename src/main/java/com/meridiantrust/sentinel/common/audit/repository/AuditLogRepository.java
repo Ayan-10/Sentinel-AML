@@ -6,6 +6,8 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.repository.Repository;
 
+import java.util.List;
+
 /**
  * Deliberately narrowed repository — Interface Segregation applied to
  * persistence.
@@ -20,6 +22,9 @@ import org.springframework.data.repository.Repository;
 public interface AuditLogRepository extends Repository<AuditLog, Long> {
 
     AuditLog save(AuditLog auditLog);
+
+    /** Bulk append, for backfilling synthetic history. Still append-only. */
+    List<AuditLog> saveAll(Iterable<AuditLog> entries);
 
     Page<AuditLog> findByEntityTypeAndEntityIdOrderByOccurredAtDesc(
             String entityType, String entityId, Pageable pageable);

@@ -281,6 +281,7 @@ charting library — covering exactly the four views the brief asks for:
 | **Risk heatmap** | Customer × typology grid, cell intensity = peak risk score. |
 | **Customer transaction timeline** | Chronological activity with alert-evidence transactions flagged, so suspicious movement is visible in the context around it. |
 | **Case detail** | Member alerts, narrative, disposition controls, the immutable audit trail, and one-click **SAR draft** generation — all on the same screen as the decision. |
+| **Productivity** | False-positive rate, mean and median time-to-disposition, alert volume trend, and false-positive rate **per rule** — the figure that names which control to retune. |
 
 The heatmap uses a **single-hue sequential ramp** (light → dark) rather than a rainbow: for a
 magnitude encoding, visual order then matches numeric order, which a multi-hue scale cannot
@@ -301,7 +302,8 @@ filing-ready **draft Suspicious Activity Report** from a case: subject details, 
 involved, the transaction schedule, and a narrative composed from each alert's own explanation —
 so every sentence traces back to the detection that produced it.
 
-This is one of the problem statement's **extension ideas**, delivered. The other five are listed
+This is one of the problem statement's **extension ideas**, delivered (along with analyst
+productivity metrics, below). The others are listed
 with their status in [`deliverables/DELIVERABLES.md` §G](deliverables/DELIVERABLES.md#g-extension-ideas--status-of-all-six).
 
 Restricted to `SENIOR_ANALYST`, because a SAR necessarily carries *unmasked* subject PII — one
@@ -335,6 +337,7 @@ All endpoints are versioned under `/api/v1`, documented in Swagger, and return R
 | `GET` `PUT` | `/admin/fx-rates` | ADMIN |
 | `GET` `POST` `DELETE` | `/admin/jurisdictions`, `/admin/watchlist` | ADMIN |
 | `GET` | `/dashboard/stats`, `/dashboard/heatmap` | ANALYST |
+| `GET` | `/dashboard/productivity` | ANALYST — FP rate, time-to-disposition, volume trend, per-rule quality |
 
 **Status codes:** `200` read · `201` create · `400` validation · `401` unauthenticated ·
 `403` role denied · `404` unknown · `409` optimistic-lock conflict · `422` illegal transition.
