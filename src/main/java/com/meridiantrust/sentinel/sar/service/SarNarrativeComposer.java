@@ -58,15 +58,25 @@ public class SarNarrativeComposer {
 
         return ("MeridianTrust Bank is reporting suspicious activity identified on %s held by %s "
                 + "(customer reference %s). The activity was detected by the bank's automated "
-                + "transaction monitoring system between %s and %s and comprises %d transaction(s) "
+                + "transaction monitoring system %s and comprises %d transaction(s) "
                 + "with an aggregate value of %s.")
                 .formatted(accountList,
                         subject.fullName(),
                         subject.customerId(),
-                        Formatting.date(activity.periodStart()),
-                        Formatting.date(activity.periodEnd()),
+                        describePeriod(activity),
                         activity.transactionCount(),
                         Formatting.money(activity.totalValueBase()));
+    }
+
+    /**
+     * Activity confined to a single day should read "on 17 Sep 2026", not
+     * "between 17 Sep 2026 and 17 Sep 2026" — which reads as a formatting fault
+     * and invites a reader to doubt the rest of the document.
+     */
+    private String describePeriod(SarDraft.ActivitySummary activity) {
+        String start = Formatting.date(activity.periodStart());
+        String end = Formatting.date(activity.periodEnd());
+        return start.equals(end) ? "on " + start : "between %s and %s".formatted(start, end);
     }
 
     private String subjectParagraph(SarDraft.Subject subject) {

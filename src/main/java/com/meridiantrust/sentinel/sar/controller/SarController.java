@@ -14,6 +14,8 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.time.format.DateTimeFormatter;
+
 /**
  * Suspicious Activity Report drafting.
  *
@@ -25,6 +27,15 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/cases/{caseRef}/sar-draft")
 @Tag(name = "SAR", description = "Suspicious Activity Report drafting (SENIOR_ANALYST only)")
 public class SarController {
+
+    /**
+     * Schedule timestamps. {@code LocalDateTime.toString()} emits nanosecond
+     * precision — 26 characters of "2026-09-17T16:05:10.825346" — which both
+     * overruns the column and puts spurious precision into a document a
+     * regulator reads. Seconds are not meaningful here; minutes are.
+     */
+    private static final DateTimeFormatter SCHEDULE_TIME =
+            DateTimeFormatter.ofPattern("dd MMM yyyy HH:mm");
 
     private final SarDraftService sarDraftService;
 
@@ -96,7 +107,7 @@ public class SarController {
         for (SarDraft.TransactionLine t : d.transactions()) {
             out.append(String.format("%-22s %-17s %-7s %16s  %s%n",
                     t.transactionId(),
-                    t.timestamp(),
+                    t.timestamp() == null ? "—" : SCHEDULE_TIME.format(t.timestamp()),
                     t.direction(),
                     t.amountBase().toPlainString(),
                     (t.counterpartyName() == null ? "—" : t.counterpartyName())

@@ -61,6 +61,31 @@ class SarNarrativeComposerTest {
     }
 
     @Test
+    @DisplayName("activity confined to one day reads \"on <date>\", not a same-date range")
+    void singleDayPeriodReadsNaturally() {
+        SarDraft.ActivitySummary sameDay = new SarDraft.ActivitySummary(
+                LocalDateTime.of(2026, 9, 17, 9, 0),
+                LocalDateTime.of(2026, 9, 17, 16, 5),
+                1, new BigDecimal("240000.00"), "INR", 1, 60, null);
+
+        String narrative = composer.compose(subject(false), sameDay, accounts,
+                List.of(finding("ALT-1", "JURISDICTION_RISK", 60)));
+
+        assertThat(narrative)
+                .contains("on 17 Sep 2026")
+                .doesNotContain("between 17 Sep 2026 and 17 Sep 2026");
+    }
+
+    @Test
+    @DisplayName("activity spanning days still reads as a range")
+    void multiDayPeriodReadsAsRange() {
+        String narrative = composer.compose(subject(false), activity("ESCALATED_TO_SAR", 1),
+                accounts, List.of(finding("ALT-1", "JURISDICTION_RISK", 77)));
+
+        assertThat(narrative).contains("between 16 Sep 2026 and 17 Sep 2026");
+    }
+
+    @Test
     @DisplayName("no format placeholder survives into the narrative")
     void noUnsubstitutedPlaceholders() {
         // Java's `.formatted()` binds to the last literal in a concatenation, so an
