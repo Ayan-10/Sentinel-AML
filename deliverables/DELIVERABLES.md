@@ -20,6 +20,7 @@ then work down this page.
 | **D5** | Unit tests covering detection rule logic | ✅ **49 passing** | `./gradlew test`. Sources: [`src/test/java/.../detection/rules/`](../src/test/java/com/meridiantrust/sentinel/detection/rules/). Boundary matrix in §D below. |
 | **D6** | README explaining **architecture**, **setup instructions**, and **rule configuration approach** | ✅ | [`README.md`](../README.md) — all three mandated sections present and self-contained: [Architecture](../README.md#architecture), [Setup](../README.md#setup-instructions), [Rule configuration](../README.md#rule-configuration-approach). |
 | **D7** | Demo walkthrough showing ingestion → detection → alert → case disposition | ✅ | [`deliverables/DEMO.md`](DEMO.md) — a scripted, copy-pasteable walkthrough of the full flow against the seeded data. |
+| **§C** | Frontend/dashboard — alert queue, risk heatmap, customer timeline, case detail (*optional but recommended* in the brief) | ✅ **Delivered** | **http://localhost:3000** — React 18 + Vite, served by `nginx` as the `sentinel-web` container. All four required views present; see [§C2](#c2-frontend--dashboard-problem-statement-c--optional-but-recommended). |
 
 > **D1 note:** the repository is initialised and every file is staged, but no commit exists because
 > the user instructed "do not commit or push". This is the single outstanding item and it is one

@@ -8,8 +8,9 @@ Built to the supplied problem statement (`Sentinel_AML__Building_Real-Time_Money
 
 ### Where to start
 
-| If you want to… | Read |
+| If you want to… | Go to |
 |---|---|
+| **Just see it** — the analyst console, populated and clickable | **http://localhost:3000** after `docker compose up --build` |
 | **Check the deliverables** — every requirement mapped to the file or command that proves it | **[`deliverables/DELIVERABLES.md`](deliverables/DELIVERABLES.md)** |
 | **See it work** — the full ingestion → detection → alert → case disposition flow | **[`deliverables/DEMO.md`](deliverables/DEMO.md)** |
 | Understand the architecture, set it up, or tune the rules | This README — the three sections below |
