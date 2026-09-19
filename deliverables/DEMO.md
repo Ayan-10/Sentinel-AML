@@ -145,18 +145,26 @@ The structuring explanation, for example:
 
 ## 4. Streaming detection — sub-second, alerts returned inline
 
+> **Timestamps are UTC.** The container's JVM runs in UTC, and ingestion rejects
+> future-dated transactions. If your local clock is ahead of UTC (IST is +5:30), a
+> hand-written local time will be refused with
+> `BUSINESS_RULE: txnTimestamp '...' is in the future`. Generate the value instead:
+
 ```bash
+TS=$(python3 -c "import datetime;print((datetime.datetime.utcnow()
+      - datetime.timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M:%S'))")
+
 curl -s -u admin:admin123 -X POST "$B/ingestion/transactions" \
   -H 'Content-Type: application/json' \
-  -d '{"transactionId":"TXN_DEMO_1","accountId":"ACC_000204",
-       "txnTimestamp":"2026-09-19T10:00:00","direction":"DEBIT",
-       "amount":950.00,"currency":"INR",
-       "counterpartyName":"Delta Bridge Exchange","counterpartyCountry":"IR"}'
+  -d "{\"transactionId\":\"TXN_DEMO_1\",\"accountId\":\"ACC_000204\",
+       \"txnTimestamp\":\"$TS\",\"direction\":\"DEBIT\",
+       \"amount\":950.00,\"currency\":\"INR\",
+       \"counterpartyName\":\"Delta Bridge Exchange\",\"counterpartyCountry\":\"IR\"}"
 ```
 
 ```json
 {"transactionId":"TXN_DEMO_1","accepted":true,"rulesTriggered":1,
- "alertsCreated":1,"detectionMs":38}
+ "alertsCreated":1,"detectionMs":5}
 ```
 
 The caller learns **within the same HTTP request** that the transaction alerted.
