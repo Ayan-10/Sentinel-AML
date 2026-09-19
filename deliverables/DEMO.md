@@ -14,7 +14,25 @@ docker compose up --build          # or, locally:
 ./gradlew bootRun --args='--spring.profiles.active=local'
 ```
 
-Wait for `SENTINEL SEED COMPLETE` in the log. Then set:
+Wait for `SENTINEL SEED COMPLETE` in the log.
+
+### The fastest way through: the analyst console
+
+Open **http://localhost:3000** and sign in as `analyst`. The whole flow is clickable:
+
+1. **Alert queue** — already populated, highest risk first, PII masked. The top alert is an
+   **₹850** transfer to a sanctioned entity.
+2. Click it — the side panel shows **why** it fired, the score breakdown, and the evidence
+   transactions.
+3. **Open case** on that panel, then switch to the **Cases** tab.
+4. Try to close the case as `ESCALATED_TO_SAR` while signed in as `analyst` — it is refused.
+   Sign out, sign back in as `senior`, and it succeeds.
+5. The **audit trail** at the bottom of the case panel shows the whole chain: the engine raised
+   it, an analyst linked it, a senior disposed of it.
+6. **Risk heatmap** and **Customer timeline** tabs cover the remaining two views.
+
+The rest of this document does the same flow over the API, which is what a reviewer needs to
+confirm the behaviour is real rather than a UI illusion. Set:
 
 ```bash
 B=http://localhost:8080/api/v1

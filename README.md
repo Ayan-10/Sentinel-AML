@@ -51,8 +51,11 @@ is needed. Two containers start:
 
 | Container | Port | Role |
 |---|---|---|
+| **`sentinel-web`** | **`3000`** | **React analyst console — open this** |
 | `sentinel-api` | `8080` | Spring Boot application |
 | `sentinel-db` | `5433` → 5432 | PostgreSQL 16 (mapped off 5432 to avoid clashing with a local install) |
+
+Open **http://localhost:3000** and sign in as `analyst`, `senior` or `admin`.
 
 The API waits on a genuine Postgres healthcheck rather than merely on the container existing,
 then Flyway migrates and the synthetic dataset loads through the real ingestion path. When the
@@ -74,6 +77,7 @@ createdb sentinel && psql -d postgres -c "CREATE ROLE sentinel LOGIN PASSWORD 's
 
 | Resource | URL |
 |---|---|
+| **Analyst console (UI)** | **http://localhost:3000** |
 | Swagger UI | http://localhost:8080/swagger-ui.html |
 | OpenAPI spec | http://localhost:8080/v3/api-docs |
 | Health | http://localhost:8080/actuator/health |
@@ -264,6 +268,30 @@ Detection rules are tested at their **boundaries**, because the boundary *is* th
 | `PiiMasker` | names, IDs, emails, phones, and null/short edge cases |
 
 ---
+
+## Analyst console (React)
+
+A deliberately small single-page app — React 18 + Vite, hand-rolled CSS, no component or
+charting library — covering exactly the four views the brief asks for:
+
+| View | What it shows |
+|---|---|
+| **Alert queue** | Sorted by risk score descending, PII masked. Filter by status, severity, rule. Selecting an alert opens a panel with the generated explanation, the risk-score breakdown, and the evidence transactions — and the actions to dispose it or open a case. |
+| **Risk heatmap** | Customer × typology grid, cell intensity = peak risk score. |
+| **Customer transaction timeline** | Chronological activity with alert-evidence transactions flagged, so suspicious movement is visible in the context around it. |
+| **Case detail** | Member alerts, narrative, disposition controls, and the immutable audit trail on the same screen as the decision. |
+
+The heatmap uses a **single-hue sequential ramp** (light → dark) rather than a rainbow: for a
+magnitude encoding, visual order then matches numeric order, which a multi-hue scale cannot
+guarantee. Every cell also prints its score, and every severity badge carries a text label, so
+no value depends on colour alone.
+
+`nginx` proxies `/api` to the API container, so the browser sees one origin and there is no
+CORS configuration to get wrong. Credentials are held in memory for the session only —
+a compliance console should not leave them in `localStorage`.
+
+Run it standalone against a local API with `cd frontend && npm install && npm run dev`
+(port 5173, Vite proxies `/api` to `localhost:8080`).
 
 ## API
 

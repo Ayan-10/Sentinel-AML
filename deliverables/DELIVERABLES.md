@@ -65,6 +65,36 @@ false-positive rate is what decides whether an AML system is usable.
 
 ---
 
+## C2. Frontend / dashboard (problem statement §C — *optional but recommended*)
+
+**Delivered.** Open **http://localhost:3000** after `docker compose up --build`, and sign in as
+`analyst`, `senior` or `admin`.
+
+The brief names four views; all four are present:
+
+| Required view | Where | Verify |
+|---|---|---|
+| **Alert queue** | *Alert queue* tab | Sorted by risk score descending, PII masked, filters for status/severity/rule |
+| **Risk heatmap** | *Risk heatmap* tab | Customer × typology grid, 744 cells across 6 typologies |
+| **Customer transaction timeline** | *Customer timeline* tab | Alert-evidence transactions flagged; try `CUST_00026`, `CUST_00078`, `CUST_00134` |
+| **Case detail view** | *Cases* tab → select a case | Member alerts, narrative, disposition controls, immutable audit trail |
+
+Stack: React 18 + Vite, hand-rolled CSS, **no component or charting library** (165 KB bundle,
+52 KB gzipped). `nginx` proxies `/api` to the API container, so the browser sees one origin and
+there is no CORS configuration to get wrong.
+
+**RBAC holds through the UI path**, not just the API: verified through the nginx proxy that an
+anonymous request gets `401` and an `analyst` hitting an admin endpoint gets `403`. The console
+is not the thing enforcing access — the API is.
+
+The heatmap uses a single-hue sequential ramp (light → dark) rather than a rainbow, so visual
+order matches numeric order; every cell prints its score and every severity badge carries a text
+label, so no value depends on colour alone.
+
+Source: [`frontend/`](../frontend/) · Container: `sentinel-web` on port `3000`.
+
+---
+
 ## D. Unit tests (D5) — rules tested at their boundaries
 
 `./gradlew test` → **49 tests, 0 failures.** The boundary *is* the rule, so each condition is
@@ -110,7 +140,6 @@ tested from both sides rather than at a convenient midpoint.
 
 | Item | Why | Impact |
 |---|---|---|
-| **React frontend** | Descoped against the clock. The problem statement marks it *optional but recommended*. | `GET /api/v1/dashboard/stats` and `/dashboard/heatmap` are implemented and return exactly the aggregates a UI would consume. Swagger UI drives the full demo. |
 | **API / RBAC integration tests** | Time. | RBAC verified manually (403/401/200, §E). Automating it is the first test to add next. |
 | **~~Docker build not executed~~** | — | ✅ **Now verified.** `docker compose up --build` builds and runs the full stack; API reports healthy, seed loads, all six rules fire, RBAC enforced. See [DEMO.md § Running with Docker](DEMO.md#0-start). |
 | **Kafka streaming** | Extension idea, explicitly deferred to phase 2. | The [`TransactionIngestPort`](../src/main/java/com/meridiantrust/sentinel/ingestion/port/TransactionIngestPort.java) seam exists today, so a Kafka adapter is additive — no rule, validator or persistence code would change. |

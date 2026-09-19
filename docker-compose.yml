@@ -50,6 +50,19 @@ services:
     restart: on-failure
 
 
+  sentinel-web:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sentinel-web
+    depends_on:
+      sentinel-api:
+        condition: service_healthy
+    ports:
+      - "${WEB_PORT:-3000}:80"
+    networks: [sentinel-net]
+    restart: on-failure
+
 networks:
   sentinel-net:
     driver: bridge
