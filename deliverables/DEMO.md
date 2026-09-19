@@ -260,6 +260,42 @@ its reason and the identity of the analyst who made the call. Nothing was delete
 
 ---
 
+## 6b. Generate the SAR draft
+
+```bash
+curl -s -u senior:senior123 "$B/cases/$CREF/sar-draft/text"
+```
+
+```
+SUSPICIOUS ACTIVITY REPORT — DRAFT
+Draft reference : SAR-DRAFT-20260919-3F12D9
+Institution     : MeridianTrust Bank
+Prepared by     : senior
+
+NARRATIVE
+MeridianTrust Bank is reporting suspicious activity identified on ACC_000204 held by
+Karthik Nair (customer reference CUST_00134)...
+
+SUBJECT: Karthik Nair, national identifier IDN11061146, date of birth 1987-05-28,
+resident at Delhi, Delhi, IN, 119377... classified medium risk with KYC status VERIFIED.
+
+FINDING ALT-20260919-143C0452 (HIGH RISK JURISDICTION, risk score 77, severity HIGH):
+Transaction TXN_... involves Iran, listed as SANCTIONED (source: FATF Call for Action)...
+
+RECOMMENDED ACTION
+File this report with the Financial Intelligence Unit within the statutory deadline...
+```
+
+An `analyst` gets **403** — a SAR carries unmasked subject PII, so it sits behind the same bar as
+the unmasked customer record. Generating one is itself written to the audit trail.
+
+Note the narrative **quotes each alert's own explanation** rather than paraphrasing, so every
+sentence traces back to the detection that produced it. And the recommended action follows the
+case's real disposition — close a case as `FALSE_POSITIVE` and the draft says *"this draft should
+NOT be filed."*
+
+---
+
 ## 7. The immutable audit trail
 
 ```bash

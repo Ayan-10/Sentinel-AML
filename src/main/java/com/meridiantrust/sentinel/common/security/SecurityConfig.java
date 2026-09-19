@@ -114,6 +114,8 @@ public class SecurityConfig {
                     .requestMatchers("/api/v1/admin/**").hasRole(Roles.COMPLIANCE_ADMIN)
                     // Business rule 8: unmasked customer PII requires seniority.
                     .requestMatchers("/api/v1/customers/*/full").hasRole(Roles.SENIOR_ANALYST)
+                    // A SAR draft necessarily carries unmasked subject PII — same bar.
+                    .requestMatchers("/api/v1/cases/*/sar-draft/**").hasRole(Roles.SENIOR_ANALYST)
                     .requestMatchers("/api/v1/**").hasRole(Roles.ANALYST)
                     .anyRequest().authenticated())
             .httpBasic(basic -> {})

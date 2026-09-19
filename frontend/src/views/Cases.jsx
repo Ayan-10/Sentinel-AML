@@ -83,6 +83,69 @@ export default function Cases() {
   );
 }
 
+/**
+ * Draft Suspicious Activity Report for the case.
+ *
+ * Restricted to SENIOR_ANALYST at the API. An analyst clicking this gets a 403
+ * and sees it — which is the point: the console is not what enforces access.
+ */
+function SarDraftSection({ caseRef }) {
+  const [draft, setDraft] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
+
+  async function generate() {
+    setBusy(true); setError(null); setDraft(null);
+    try {
+      setDraft(await api.sarDraft(caseRef));
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <section>
+      <h4>Suspicious Activity Report</h4>
+      <button className="ghost" disabled={busy} onClick={generate}>
+        {busy ? 'Generating…' : 'Generate SAR draft'}
+      </button>
+      {error && <div className="error" style={{ marginTop: 8 }}>{error}</div>}
+
+      {draft && (
+        <div style={{ marginTop: 10 }}>
+          <div className="ref" style={{ marginBottom: 6 }}>
+            {draft.draftRef} · prepared by {draft.generatedBy}
+          </div>
+
+          <dl className="kv">
+            <dt>Subject</dt><dd>{draft.subject.fullName} ({draft.subject.nationalId})</dd>
+            <dt>Typologies</dt><dd>{draft.typologies.join(', ').replace(/_/g, ' ')}</dd>
+            <dt>Transactions</dt><dd>{draft.activity.transactionCount}</dd>
+            <dt>Total value</dt>
+            <dd>{draft.activity.baseCurrency} {Number(draft.activity.totalValueBase).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</dd>
+          </dl>
+
+          <h4 style={{ marginTop: 12 }}>Narrative</h4>
+          <div className="explanation" style={{ whiteSpace: 'pre-wrap', maxHeight: 260, overflowY: 'auto' }}>
+            {draft.narrative}
+          </div>
+
+          <h4 style={{ marginTop: 12 }}>Recommended action</h4>
+          <div className="explanation">{draft.recommendedAction}</div>
+
+          <button className="ghost" style={{ marginTop: 10 }}
+                  onClick={() => navigator.clipboard?.writeText(draft.narrative)}>
+            Copy narrative
+          </button>
+          <a className="ghost" style={{ marginTop: 10, marginLeft: 8, display: 'inline-block',
+                                        textDecoration: 'none', color: 'inherit' }}
+             href={`/api/v1/cases/${caseRef}/sar-draft/text`} target="_blank" rel="noreferrer">
+            Open plain text ↗
+          </a>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function CaseDetail({ detail, onChanged }) {
   const [reason, setReason] = useState('');
   const [disposition, setDisposition] = useState('TRUE_POSITIVE');
@@ -184,6 +247,8 @@ function CaseDetail({ detail, onChanged }) {
           </p>
         </section>
       )}
+
+      <SarDraftSection caseRef={detail.caseRef} />
 
       <section>
         <h4>Audit trail</h4>

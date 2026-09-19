@@ -65,4 +65,7 @@ export const api = {
   openCase: (body) => request('/cases', { method: 'POST', body: JSON.stringify(body) }),
   transitionCase: (ref, body) =>
     request(`/cases/${ref}/status`, { method: 'PATCH', body: JSON.stringify(body) }),
+
+  // SAR drafting — SENIOR_ANALYST only; an ANALYST receives 403, which the UI surfaces.
+  sarDraft: (ref) => request(`/cases/${ref}/sar-draft`),
 };

@@ -280,7 +280,7 @@ charting library — covering exactly the four views the brief asks for:
 | **Alert queue** | Sorted by risk score descending, PII masked. Filter by status, severity, rule. Selecting an alert opens a panel with the generated explanation, the risk-score breakdown, and the evidence transactions — and the actions to dispose it or open a case. |
 | **Risk heatmap** | Customer × typology grid, cell intensity = peak risk score. |
 | **Customer transaction timeline** | Chronological activity with alert-evidence transactions flagged, so suspicious movement is visible in the context around it. |
-| **Case detail** | Member alerts, narrative, disposition controls, and the immutable audit trail on the same screen as the decision. |
+| **Case detail** | Member alerts, narrative, disposition controls, the immutable audit trail, and one-click **SAR draft** generation — all on the same screen as the decision. |
 
 The heatmap uses a **single-hue sequential ramp** (light → dark) rather than a rainbow: for a
 magnitude encoding, visual order then matches numeric order, which a multi-hue scale cannot
@@ -293,6 +293,24 @@ a compliance console should not leave them in `localStorage`.
 
 Run it standalone against a local API with `cd frontend && npm install && npm run dev`
 (port 5173, Vite proxies `/api` to `localhost:8080`).
+
+## SAR draft generation
+
+`GET /api/v1/cases/{caseRef}/sar-draft` (JSON) or `/sar-draft/text` (printable) assembles a
+filing-ready **draft Suspicious Activity Report** from a case: subject details, accounts
+involved, the transaction schedule, and a narrative composed from each alert's own explanation —
+so every sentence traces back to the detection that produced it.
+
+This is one of the problem statement's **extension ideas**, delivered. The other five are listed
+with their status in [`deliverables/DELIVERABLES.md` §G](deliverables/DELIVERABLES.md#g-extension-ideas--status-of-all-six).
+
+Restricted to `SENIOR_ANALYST`, because a SAR necessarily carries *unmasked* subject PII — one
+that masks its subject identifies nobody and is of no use to a Financial Intelligence Unit.
+Generating a draft is itself written to the audit trail.
+
+The draft never overstates suspicion: the recommended action follows the case's real disposition,
+so a case closed as `FALSE_POSITIVE` yields a draft that says plainly *"this draft should NOT be
+filed."*
 
 ## API
 
@@ -311,6 +329,7 @@ All endpoints are versioned under `/api/v1`, documented in Swagger, and return R
 | `GET` | `/customers/{id}` | ANALYST — **masked** |
 | `GET` | `/customers/{id}/full` | **SENIOR** — unmasked |
 | `GET` | `/customers/{id}/timeline` | ANALYST |
+| `GET` | `/cases/{ref}/sar-draft` | **SENIOR** — generated SAR draft (JSON, or `/text`) |
 | `GET` | `/audit` | ANALYST — immutable trail |
 | `GET` `PATCH` | `/admin/rules[/{code}]` | ADMIN — runtime tuning |
 | `GET` `PUT` | `/admin/fx-rates` | ADMIN |

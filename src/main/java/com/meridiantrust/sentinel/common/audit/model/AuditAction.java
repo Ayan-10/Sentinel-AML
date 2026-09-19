@@ -15,6 +15,7 @@ public final class AuditAction {
     public static final String CASE_ASSIGNED = "CASE_ASSIGNED";
     public static final String CASE_STATUS_CHANGED = "CASE_STATUS_CHANGED";
     public static final String CASE_DISPOSED = "CASE_DISPOSED";
+    public static final String SAR_DRAFT_GENERATED = "SAR_DRAFT_GENERATED";
 
     public static final String RULE_UPDATED = "RULE_UPDATED";
     public static final String REFERENCE_DATA_UPDATED = "REFERENCE_DATA_UPDATED";

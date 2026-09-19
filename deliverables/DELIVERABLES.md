@@ -16,11 +16,12 @@ then work down this page.
 | **D1** | Working Spring Boot application, source in a Git repository | ⚠️ **See note** | App: `./gradlew bootRun` → boots in ~2.8 s. Repo initialised (`.git` present, `.gitignore` configured, 142 files staged) but **left uncommitted at the user's explicit instruction**. One `git commit` completes this row. |
 | **D2** | Database schema / ERD with migration scripts | ✅ | Migrations: [`src/main/resources/db/migration/V1__core_schema.sql`](../src/main/resources/db/migration/V1__core_schema.sql), [`V2__reference_data.sql`](../src/main/resources/db/migration/V2__reference_data.sql). ERD: [README § Database schema & ERD](../README.md#database-schema--erd). Applied automatically by Flyway on startup. |
 | **D3** | Seed/synthetic dataset — customers, accounts, transactions covering **≥ 3** laundering typologies | ✅ **6 typologies** | Data files: [`deliverables/seed-data/`](seed-data/) — 500 customers, 737 accounts, 10,000 transactions. Generator: [`seed/SyntheticDataGenerator.java`](../src/main/java/com/meridiantrust/sentinel/seed/SyntheticDataGenerator.java), typologies planted by [`seed/TypologyPlanter.java`](../src/main/java/com/meridiantrust/sentinel/seed/TypologyPlanter.java). See §C below. |
-| **D4** | Documented REST API (OpenAPI/Swagger spec) | ✅ | Live: http://localhost:8080/swagger-ui.html · Spec file: [`deliverables/openapi.json`](openapi.json) — **26 paths, 30 schemas**, every endpoint annotated with roles, status codes and examples. |
-| **D5** | Unit tests covering detection rule logic | ✅ **49 passing** | `./gradlew test`. Sources: [`src/test/java/.../detection/rules/`](../src/test/java/com/meridiantrust/sentinel/detection/rules/). Boundary matrix in §D below. |
+| **D4** | Documented REST API (OpenAPI/Swagger spec) | ✅ | Live: http://localhost:8080/swagger-ui.html · Spec file: [`deliverables/openapi.json`](openapi.json) — **28 paths, 35 schemas**, every endpoint annotated with roles, status codes and examples. |
+| **D5** | Unit tests covering detection rule logic | ✅ **59 passing** | `./gradlew test`. Sources: [`src/test/java/.../detection/rules/`](../src/test/java/com/meridiantrust/sentinel/detection/rules/). Boundary matrix in §D below. |
 | **D6** | README explaining **architecture**, **setup instructions**, and **rule configuration approach** | ✅ | [`README.md`](../README.md) — all three mandated sections present and self-contained: [Architecture](../README.md#architecture), [Setup](../README.md#setup-instructions), [Rule configuration](../README.md#rule-configuration-approach). |
 | **D7** | Demo walkthrough showing ingestion → detection → alert → case disposition | ✅ | [`deliverables/DEMO.md`](DEMO.md) — a scripted, copy-pasteable walkthrough of the full flow against the seeded data. |
 | **§C** | Frontend/dashboard — alert queue, risk heatmap, customer timeline, case detail (*optional but recommended* in the brief) | ✅ **Delivered** | **http://localhost:3000** — React 18 + Vite, served by `nginx` as the `sentinel-web` container. All four required views present; see [§C2](#c2-frontend--dashboard-problem-statement-c--optional-but-recommended). |
+| **Ext.** | Extension idea — automated SAR draft generation (*extension ideas* in the brief) | ✅ **Delivered** | `GET /api/v1/cases/{ref}/sar-draft` · UI: Cases → **Generate SAR draft**. 1 of 6 extension ideas attempted; the other five are listed in [§G](#g-extension-ideas--status-of-all-six). |
 
 > **D1 note:** the repository is initialised and every file is staged, but no commit exists because
 > the user instructed "do not commit or push". This is the single outstanding item and it is one
@@ -96,9 +97,52 @@ Source: [`frontend/`](../frontend/) · Container: `sentinel-web` on port `3000`.
 
 ---
 
+## C3. Extension delivered — automated SAR draft generation
+
+The problem statement lists *"automated SAR (Suspicious Activity Report) draft generation
+summarizing evidence in narrative form for regulatory filing"* among its extension ideas.
+**Delivered.**
+
+| | |
+|---|---|
+| Endpoint | `GET /api/v1/cases/{caseRef}/sar-draft` (JSON) · `/sar-draft/text` (printable) |
+| Role | **SENIOR_ANALYST** — enforced at the URL *and* on the service method |
+| Source | [`src/main/java/.../sar/`](../src/main/java/com/meridiantrust/sentinel/sar/) |
+| UI | Cases tab → select a case → **Generate SAR draft** |
+| Tests | 10 unit tests on the narrative composer |
+
+Try it:
+
+```bash
+CREF=$(curl -s -u analyst:analyst123 'http://localhost:8080/api/v1/cases?size=1' \
+       | python3 -c 'import sys,json;print(json.load(sys.stdin)["content"][0]["caseRef"])')
+curl -s -u senior:senior123 "http://localhost:8080/api/v1/cases/$CREF/sar-draft/text"
+```
+
+**Why it is senior-only.** A SAR necessarily carries *unmasked* subject PII — one that masks its
+subject identifies nobody and is useless to a Financial Intelligence Unit. That makes it the same
+class of privileged read as the unmasked customer record (business rule 8), so it carries the
+same bar, and generating a draft writes a `SAR_DRAFT_GENERATED` entry to the audit trail.
+
+**Design.** The draft is assembled by `SarDraftService` and written by `SarNarrativeComposer`,
+deliberately split: one gathers data, the other writes English. The composer is a pure function
+from values to prose — no I/O, no entities — so the wording a compliance team will inevitably
+want to revise can be changed and tested without touching a query, a transaction boundary or a
+security annotation. It is the same property that makes the detection rules cheap to test.
+
+**It never overstates suspicion.** The narrative quotes each alert's own explanation rather than
+paraphrasing, so every sentence is traceable to the detection that produced it. And the
+recommended action is derived from the case's actual disposition: a case closed as
+`FALSE_POSITIVE` produces a draft that says in terms *"this draft should NOT be filed."*
+
+**Nothing else changed.** The feature is a new package plus one audit-vocabulary constant and one
+URL rule. Read-only: it creates no rows and alters no alert, case or disposition.
+
+---
+
 ## D. Unit tests (D5) — rules tested at their boundaries
 
-`./gradlew test` → **49 tests, 0 failures.** The boundary *is* the rule, so each condition is
+`./gradlew test` → **59 tests, 0 failures.** The boundary *is* the rule, so each condition is
 tested from both sides rather than at a convenient midpoint.
 
 | Test class | Cases |
@@ -111,6 +155,7 @@ tested from both sides rather than at a convenient midpoint.
 | [`RoundAmountPatternRuleTest`](../src/test/java/com/meridiantrust/sentinel/detection/rules/RoundAmountPatternRuleTest.java) | 3 round → yes · mixed → no · below floor → no |
 | [`RiskScoringServiceTest`](../src/test/java/com/meridiantrust/sentinel/alerting/RiskScoringServiceTest.java) | base weight · customer risk + PEP uplift · clamping at 100 · log-scaled magnitude · recurrence cap · **noisy-OR does not saturate** · monotonicity · ordering preserved |
 | [`PiiMaskerTest`](../src/test/java/com/meridiantrust/sentinel/common/PiiMaskerTest.java) | names · identifiers · emails · phones · null and short-value edge cases |
+| [`SarNarrativeComposerTest`](../src/test/java/com/meridiantrust/sentinel/sar/SarNarrativeComposerTest.java) | narrative essentials · alert explanations quoted verbatim · PEP called out · singular/plural wording · **no unsubstituted format placeholder reaches a regulator** · false positive → "do NOT file" |
 
 ---
 
@@ -143,7 +188,6 @@ tested from both sides rather than at a convenient midpoint.
 |---|---|---|
 | **API / RBAC integration tests** | Time. | RBAC verified manually (403/401/200, §E). Automating it is the first test to add next. |
 | **~~Docker build not executed~~** | — | ✅ **Now verified.** `docker compose up --build` builds and runs the full stack; API reports healthy, seed loads, all six rules fire, RBAC enforced. See [DEMO.md § Running with Docker](DEMO.md#0-start). |
-| **Kafka streaming** | Extension idea, explicitly deferred to phase 2. | The [`TransactionIngestPort`](../src/main/java/com/meridiantrust/sentinel/ingestion/port/TransactionIngestPort.java) seam exists today, so a Kafka adapter is additive — no rule, validator or persistence code would change. |
 
 ### One judgement call worth your attention
 
@@ -159,3 +203,26 @@ curl -u admin:admin123 -X PATCH localhost:8080/api/v1/admin/rules/CTR_THRESHOLD 
 
 That this is a one-line runtime change rather than a redeployment is itself the demonstration of
 the "configurable without code redeployment" requirement.
+
+---
+
+## G. Extension ideas — status of all six
+
+The brief lists six extension ideas. They were explicitly deferred to a second phase; **one is
+delivered**. Stated in full so the position is unambiguous rather than inferred:
+
+| # | Extension idea | Status |
+|---|---|---|
+| 1 | ML-based anomaly scoring (isolation forest / clustering) | ❌ Not attempted. Detection is purely rule-based — which is what the brief asks for first: *"I don't need a perfect AI model."* |
+| 2 | Network/graph visualisation of linked accounts and flows | ❌ Not attempted. **Blocked by the data, not the code:** the seed generator writes counterparty accounts as synthetic references, so **0 transactions currently link to another account in the system**. A graph would render empty; delivering this means extending the generator to create genuine account-to-account chains first. |
+| 3 | Kafka + Spring Cloud Stream real-time pipeline | ⚠️ **Partial.** Sub-second streaming alerting *is* delivered over REST (`POST /api/v1/ingestion/transactions`, measured at 5 ms), and [`TransactionIngestPort`](../src/main/java/com/meridiantrust/sentinel/ingestion/port/TransactionIngestPort.java) is a real hexagonal seam so a Kafka adapter is additive. But there is **no broker and no Spring Cloud Stream** — the seam is architecture, not the extension. |
+| 4 | **Automated SAR draft generation** | ✅ **Delivered** — see [§C3](#c3-extension-delivered--automated-sar-draft-generation). |
+| 5 | Analyst productivity dashboard (volume trends, false-positive rate, time-to-disposition) | ⚠️ **Partial.** `/dashboard/stats` and `/dashboard/heatmap` return real aggregates and drive the UI, but the three metrics the brief names specifically are **not** implemented. The data exists (`audit_log` holds every transition with timestamps; `alerts` holds dispositions), so these are queries away — but on a fresh boot almost nothing is disposed, so they would read as zeroes without seeding realistic dispositions first. |
+| 6 | Configurable rule versioning / A-B testing of thresholds | ❌ Not attempted. Rule changes *are* runtime-tunable and fully audited with a before/after snapshot (§B, rule config), but there is no versioning, no experiment assignment and no impact measurement. |
+
+**Why #4 was the one chosen.** It had the best ratio of effort to value: every input already
+existed — the detection engine's alert explanations are already narrative prose, cases already
+group alerts against one customer, and evidence transactions are already linked — so the work was
+composition rather than new capability. It also converts `ESCALATED_TO_SAR` from a status string
+into an actual business artifact, which is what the brief's *"clean workflow to act on it"* asks
+for.

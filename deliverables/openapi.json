@@ -48,6 +48,10 @@
             "description": "Bulk CSV and real-time streaming data ingestion (COMPLIANCE_ADMIN)"
         },
         {
+            "name": "SAR",
+            "description": "Suspicious Activity Report drafting (SENIOR_ANALYST only)"
+        },
+        {
             "name": "Cases",
             "description": "Analyst investigation workflow and disposition"
         }
@@ -1096,6 +1100,102 @@
                             "*/*": {
                                 "schema": {
                                     "$ref": "#/components/schemas/Detail"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/cases/{caseRef}/sar-draft": {
+            "get": {
+                "tags": [
+                    "SAR"
+                ],
+                "summary": "Generate a draft SAR for a case",
+                "description": "Assembles a filing-ready draft from the case's alerts: subject details,\naccounts involved, the transaction schedule, and a narrative composed from\neach alert's own explanation \u2014 so every sentence is traceable to the\ndetection that produced it.\n\n**Restricted to SENIOR_ANALYST.** A SAR necessarily carries *unmasked*\nsubject PII \u2014 one that masks its subject identifies nobody and is of no use\nto a Financial Intelligence Unit. Generating a draft is written to the\naudit trail for that reason.\n\nThe draft is never filed automatically; a compliance officer reviews, edits\nand files it. Where the case was dispositioned as a false positive, the\nrecommended action says so explicitly.\n",
+                "operationId": "draft",
+                "parameters": [
+                    {
+                        "name": "caseRef",
+                        "in": "path",
+                        "description": "Case reference",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        },
+                        "example": "CASE-20260919-1F5E98"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Draft generated",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SarDraft"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "The case has no alerts to report on",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SarDraft"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Requires SENIOR_ANALYST",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SarDraft"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such case",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/SarDraft"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/cases/{caseRef}/sar-draft/text": {
+            "get": {
+                "tags": [
+                    "SAR"
+                ],
+                "summary": "The same draft as plain text",
+                "description": "A printable rendering for pasting into a filing system or attaching to a case file. Same content, same authorisation, same audit entry.",
+                "operationId": "draftAsText",
+                "parameters": [
+                    {
+                        "name": "caseRef",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "text/plain": {
+                                "schema": {
+                                    "type": "string"
                                 }
                             }
                         }
@@ -2456,6 +2556,214 @@
                     "alertCount": {
                         "type": "integer",
                         "format": "int32"
+                    }
+                }
+            },
+            "AccountSummary": {
+                "type": "object",
+                "properties": {
+                    "accountId": {
+                        "type": "string"
+                    },
+                    "accountType": {
+                        "type": "string"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "openDate": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "branch": {
+                        "type": "string"
+                    }
+                }
+            },
+            "ActivitySummary": {
+                "type": "object",
+                "description": "Aggregate picture of the suspicious activity.",
+                "properties": {
+                    "periodStart": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "periodEnd": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "transactionCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "totalValueBase": {
+                        "type": "number",
+                        "description": "Total value of cited transactions, normalised to the base currency"
+                    },
+                    "baseCurrency": {
+                        "type": "string"
+                    },
+                    "alertCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "highestRiskScore": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "caseDisposition": {
+                        "type": "string"
+                    }
+                }
+            },
+            "SarDraft": {
+                "type": "object",
+                "description": "A draft Suspicious Activity Report generated from a case's alerts and evidence.",
+                "properties": {
+                    "draftRef": {
+                        "type": "string",
+                        "example": "SAR-DRAFT-20260919-4F2A1C"
+                    },
+                    "caseRef": {
+                        "type": "string",
+                        "example": "CASE-20260919-1F5E98"
+                    },
+                    "generatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "generatedBy": {
+                        "type": "string",
+                        "description": "Analyst who generated the draft"
+                    },
+                    "filingInstitution": {
+                        "type": "string",
+                        "description": "Institution filing the report"
+                    },
+                    "subject": {
+                        "$ref": "#/components/schemas/Subject"
+                    },
+                    "accounts": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AccountSummary"
+                        }
+                    },
+                    "activity": {
+                        "$ref": "#/components/schemas/ActivitySummary"
+                    },
+                    "narrative": {
+                        "type": "string",
+                        "description": "Narrative in regulatory filing form, composed from the alert evidence"
+                    },
+                    "transactions": {
+                        "type": "array",
+                        "description": "Chronological schedule of the transactions cited as evidence",
+                        "items": {
+                            "$ref": "#/components/schemas/TransactionLine"
+                        }
+                    },
+                    "typologies": {
+                        "type": "array",
+                        "description": "Laundering typologies detected across the case's alerts",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "sourceAlerts": {
+                        "type": "array",
+                        "description": "Alert references this draft is built from",
+                        "items": {
+                            "type": "string"
+                        }
+                    },
+                    "recommendedAction": {
+                        "type": "string"
+                    }
+                }
+            },
+            "Subject": {
+                "type": "object",
+                "description": "Subject of the report. Contains unmasked PII \u2014 SENIOR_ANALYST only.",
+                "properties": {
+                    "customerId": {
+                        "type": "string"
+                    },
+                    "fullName": {
+                        "type": "string"
+                    },
+                    "nationalId": {
+                        "type": "string"
+                    },
+                    "dateOfBirth": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "address": {
+                        "type": "string"
+                    },
+                    "occupation": {
+                        "type": "string"
+                    },
+                    "customerSegment": {
+                        "type": "string"
+                    },
+                    "kycStatus": {
+                        "type": "string"
+                    },
+                    "riskRating": {
+                        "type": "string"
+                    },
+                    "politicallyExposed": {
+                        "type": "boolean"
+                    },
+                    "customerSince": {
+                        "type": "string",
+                        "format": "date"
+                    }
+                }
+            },
+            "TransactionLine": {
+                "type": "object",
+                "description": "One line of the transaction schedule.",
+                "properties": {
+                    "transactionId": {
+                        "type": "string"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "accountId": {
+                        "type": "string"
+                    },
+                    "direction": {
+                        "type": "string"
+                    },
+                    "amountBase": {
+                        "type": "number"
+                    },
+                    "originalAmount": {
+                        "type": "number"
+                    },
+                    "originalCurrency": {
+                        "type": "string"
+                    },
+                    "channel": {
+                        "type": "string"
+                    },
+                    "counterpartyName": {
+                        "type": "string"
+                    },
+                    "counterpartyCountry": {
+                        "type": "string"
+                    },
+                    "citedBy": {
+                        "type": "array",
+                        "description": "Alerts that cite this transaction as evidence",
+                        "items": {
+                            "type": "string"
+                        }
                     }
                 }
             },
