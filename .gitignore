@@ -1,0 +1,35 @@
+# Build
+build/
+out/
+target/
+bin/
+!gradle/wrapper/gradle-wrapper.jar
+.gradle/
+
+# IDE
+.idea/
+*.iml
+*.ipr
+*.iws
+.vscode/
+.settings/
+.classpath
+.project
+
+# Internal working documents (design record, supplied brief, scratch data).
+# Everything required as a deliverable lives in deliverables/ and IS committed.
+docs/
+
+# Secrets - never commit
+.env
+*.pem
+*.key
+
+# Frontend
+node_modules/
+frontend/dist/
+frontend/.vite/
+
+# OS / logs
+.DS_Store
+*.log

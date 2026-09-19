@@ -1,0 +1,2574 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Sentinel AML \u2014 Transaction Monitoring System",
+        "description": "Real-time money-laundering detection for MeridianTrust Bank.\n\n**Flow:** ingestion \u2192 detection \u2192 risk-scored alert \u2192 case disposition.\n\n**Roles** (RBAC is enforced at this API layer, not only in the UI):\n- `ANALYST` \u2014 alert queue (PII masked), cases, dispositions\n- `SENIOR_ANALYST` \u2014 the above, plus unmasked PII and SAR escalation\n- `COMPLIANCE_ADMIN` \u2014 the above, plus ingestion and rule configuration\n\nDetection thresholds are tunable at runtime via\n`PATCH /api/v1/admin/rules/{ruleCode}` \u2014 no redeployment required.\n",
+        "contact": {
+            "name": "MeridianTrust Financial Crime Engineering"
+        },
+        "license": {
+            "name": "Proprietary"
+        },
+        "version": "v1"
+    },
+    "servers": [
+        {
+            "url": "/",
+            "description": "Current host"
+        }
+    ],
+    "security": [
+        {
+            "basicAuth": []
+        }
+    ],
+    "tags": [
+        {
+            "name": "Audit",
+            "description": "Immutable trail of all alert and case state transitions"
+        },
+        {
+            "name": "Customers",
+            "description": "KYC records and transaction timeline"
+        },
+        {
+            "name": "Dashboard",
+            "description": "Aggregate metrics for the analyst dashboard"
+        },
+        {
+            "name": "Alerts",
+            "description": "Risk-scored alert queue and analyst dispositions"
+        },
+        {
+            "name": "Administration",
+            "description": "Runtime rule tuning and reference data (COMPLIANCE_ADMIN only)"
+        },
+        {
+            "name": "Ingestion",
+            "description": "Bulk CSV and real-time streaming data ingestion (COMPLIANCE_ADMIN)"
+        },
+        {
+            "name": "Cases",
+            "description": "Analyst investigation workflow and disposition"
+        }
+    ],
+    "paths": {
+        "/api/v1/admin/fx-rates/{currency}": {
+            "put": {
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "Set an exchange rate",
+                "description": "Applies to transactions ingested from this point on; historical amounts keep the rate they were normalised with.",
+                "operationId": "updateFxRate",
+                "parameters": [
+                    {
+                        "name": "currency",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/FxRateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/FxRate"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/ingestion/transactions": {
+            "post": {
+                "tags": [
+                    "Ingestion"
+                ],
+                "summary": "Ingest a single transaction in real time",
+                "description": "The streaming path. Validates, persists and evaluates detection rules\nsynchronously, so the response states whether the transaction alerted\nand how long evaluation took \u2014 sub-second under normal conditions.\n",
+                "operationId": "ingestSingle",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/SingleTransactionRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "description": "Accepted and evaluated",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StreamingResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Validation failed \u2014 see problem detail",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StreamingResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/ingestion/transactions/csv": {
+            "post": {
+                "tags": [
+                    "Ingestion"
+                ],
+                "summary": "Bulk-load transactions and run detection",
+                "description": "Validates, normalises to base currency (business rule 9), persists,\nthen evaluates every enabled rule over the accepted records.\nThe response reports wall-clock duration so the bulk performance\ntarget is demonstrable rather than asserted.\n",
+                "operationId": "ingestTransactions",
+                "parameters": [
+                    {
+                        "name": "runDetection",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "default": true
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                },
+                                "required": [
+                                    "file"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Batch processed; see rejections for refused rows",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/IngestionResponse"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "File missing or unreadable",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/IngestionResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/ingestion/transactions/batch": {
+            "post": {
+                "tags": [
+                    "Ingestion"
+                ],
+                "summary": "Ingest a JSON batch of transactions",
+                "operationId": "ingestBatch",
+                "parameters": [
+                    {
+                        "name": "runDetection",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "boolean",
+                            "default": true
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/components/schemas/SingleTransactionRequest"
+                                }
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/IngestionResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/ingestion/customers/csv": {
+            "post": {
+                "tags": [
+                    "Ingestion"
+                ],
+                "summary": "Bulk-load customer KYC records from CSV",
+                "description": "Columns follow docs/customers.csv. Malformed rows are rejected individually.",
+                "operationId": "ingestCustomers",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                },
+                                "required": [
+                                    "file"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/IngestionResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/ingestion/accounts/csv": {
+            "post": {
+                "tags": [
+                    "Ingestion"
+                ],
+                "summary": "Bulk-load accounts from CSV",
+                "description": "Rows whose customer_id does not exist are rejected \u2014 load customers first.",
+                "operationId": "ingestAccounts",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "file": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    }
+                                },
+                                "required": [
+                                    "file"
+                                ]
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/IngestionResponse"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/cases": {
+            "get": {
+                "tags": [
+                    "Cases"
+                ],
+                "summary": "Case queue",
+                "description": "Sorted by aggregate risk score descending by default.",
+                "operationId": "queue",
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "NEW",
+                                "INVESTIGATING",
+                                "PENDING_APPROVAL",
+                                "CLOSED"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "assignedTo",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "customerId",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int32",
+                            "default": 0
+                        }
+                    },
+                    {
+                        "name": "size",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int32",
+                            "default": 25
+                        }
+                    },
+                    {
+                        "name": "sortBy",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "aggregateRiskScore"
+                        }
+                    },
+                    {
+                        "name": "direction",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "desc"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PageResponseSummary"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Cases"
+                ],
+                "summary": "Open a case over one or more alerts",
+                "operationId": "open",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/OpenRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "description": "Case created",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Detail"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "No alerts supplied, or alerts span multiple customers",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Detail"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "One of the alert references does not exist",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Detail"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/watchlist": {
+            "get": {
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "Named counterparty watchlist",
+                "operationId": "watchlist",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/WatchlistCounterparty"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "Add a counterparty to the watchlist",
+                "operationId": "addWatchlist",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/WatchlistCounterparty"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/WatchlistCounterparty"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/jurisdictions": {
+            "get": {
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "High-risk and sanctioned jurisdiction list",
+                "operationId": "jurisdictions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/HighRiskJurisdiction"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "Add or update a jurisdiction listing",
+                "operationId": "upsertJurisdiction",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/HighRiskJurisdiction"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HighRiskJurisdiction"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/cases/{caseRef}/status": {
+            "patch": {
+                "tags": [
+                    "Cases"
+                ],
+                "summary": "Transition a case",
+                "description": "Closing a case requires a disposition and reason, and cascades that\ndisposition onto every member alert \u2014 each cascade separately audited.\n",
+                "operationId": "transition",
+                "parameters": [
+                    {
+                        "name": "caseRef",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/TransitionRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Transition applied",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Detail"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Missing disposition or reason",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Detail"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Role does not permit this disposition",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Detail"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Illegal transition for the current state",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Detail"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/cases/{caseRef}/assignee": {
+            "patch": {
+                "tags": [
+                    "Cases"
+                ],
+                "summary": "Reassign a case",
+                "operationId": "assign",
+                "parameters": [
+                    {
+                        "name": "caseRef",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AssignRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Detail"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/alerts/{alertRef}/status": {
+            "patch": {
+                "tags": [
+                    "Alerts"
+                ],
+                "summary": "Transition an alert",
+                "description": "Moves an alert through its lifecycle. Closing requires a disposition\nand a reason, both retained permanently with the analyst's identity \u2014\nalerts are never deleted (business rule 6).\n\nESCALATED_TO_SAR requires the SENIOR_ANALYST role.\n",
+                "operationId": "transition_1",
+                "parameters": [
+                    {
+                        "name": "alertRef",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/AlertTransitionRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Transition applied",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AlertDetailDto"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Missing disposition or reason",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AlertDetailDto"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Role does not permit this disposition",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AlertDetailDto"
+                                }
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Concurrently modified \u2014 reload and retry",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AlertDetailDto"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Illegal transition for the current state",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AlertDetailDto"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/rules/{ruleCode}": {
+            "get": {
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "Get one rule's configuration",
+                "operationId": "rule",
+                "parameters": [
+                    {
+                        "name": "ruleCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RuleDto"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "Tune a rule at runtime",
+                "description": "Changes take effect on the next detection run \u2014 no restart, no\nredeployment. Parameters are validated before they are accepted,\nso a configuration that could never fire is rejected rather than\nsilently disabling a control.\n\nExample \u2014 loosen structuring to catch pairs rather than triples:\n`{\"params\": {\"minCount\": 2, \"windowHours\": 24,\n             \"lowerBound\": 9000, \"upperBound\": 9999.99}}`\n",
+                "operationId": "updateRule",
+                "parameters": [
+                    {
+                        "name": "ruleCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/RuleUpdateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Rule updated and cache refreshed",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RuleDto"
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Parameters failed validation",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RuleDto"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Requires COMPLIANCE_ADMIN",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RuleDto"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such rule",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/RuleDto"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/ingestion/batches/{batchRef}": {
+            "get": {
+                "tags": [
+                    "Ingestion"
+                ],
+                "summary": "Batch summary with every rejected row and its reason",
+                "operationId": "batch",
+                "parameters": [
+                    {
+                        "name": "batchRef",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/BatchSummary"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dashboard/stats": {
+            "get": {
+                "tags": [
+                    "Dashboard"
+                ],
+                "summary": "Dashboard KPIs: alert counts by status, severity and rule",
+                "operationId": "stats",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/StatsDto"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/dashboard/heatmap": {
+            "get": {
+                "tags": [
+                    "Dashboard"
+                ],
+                "summary": "Risk heatmap",
+                "description": "Customer x typology grid with the peak risk score in each cell.",
+                "operationId": "heatmap",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/HeatmapCell"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/customers/{customerId}": {
+            "get": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "Customer (PII masked)",
+                "description": "Business rule 8: names and identifiers are masked. Any analyst may call this.",
+                "operationId": "masked",
+                "parameters": [
+                    {
+                        "name": "customerId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Masked"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/customers/{customerId}/timeline": {
+            "get": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "Transaction timeline",
+                "description": "Chronological activity, annotating each transaction with the alerts it evidences.",
+                "operationId": "timeline",
+                "parameters": [
+                    {
+                        "name": "customerId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int32",
+                            "default": 100
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/TimelineEntry"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/customers/{customerId}/full": {
+            "get": {
+                "tags": [
+                    "Customers"
+                ],
+                "summary": "Customer with full PII",
+                "description": "Business rule 8: unmasked KYC detail, restricted to SENIOR_ANALYST\nand above. Enforced by both the URL rule and a method-level check \u2014\nthe UI is not part of the decision.\n",
+                "operationId": "full",
+                "parameters": [
+                    {
+                        "name": "customerId",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Full record returned",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Full"
+                                }
+                            }
+                        }
+                    },
+                    "403": {
+                        "description": "Requires SENIOR_ANALYST",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Full"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such customer",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Full"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/cases/{caseRef}": {
+            "get": {
+                "tags": [
+                    "Cases"
+                ],
+                "summary": "Case detail with member alerts and the immutable audit trail",
+                "operationId": "detail",
+                "parameters": [
+                    {
+                        "name": "caseRef",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Detail"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/audit": {
+            "get": {
+                "tags": [
+                    "Audit"
+                ],
+                "summary": "Audit trail",
+                "description": "Every alert and case state transition with its actor and timestamp.\nFilter by entityType (ALERT, CASE, RULE, REFERENCE, INGESTION) and\noptionally by a specific entityId.\n",
+                "operationId": "trail",
+                "parameters": [
+                    {
+                        "name": "entityType",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "entityId",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int32",
+                            "default": 0
+                        }
+                    },
+                    {
+                        "name": "size",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int32",
+                            "default": 50
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PageResponseAuditEntryDto"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/alerts": {
+            "get": {
+                "tags": [
+                    "Alerts"
+                ],
+                "summary": "Alert queue",
+                "description": "Returns alerts with customer PII masked (business rule 8).\nSorted by risk score descending by default so the highest-risk\nalerts reach the top of the queue (business rule 7).\n",
+                "operationId": "queue_1",
+                "parameters": [
+                    {
+                        "name": "status",
+                        "in": "query",
+                        "description": "OPEN, IN_REVIEW, ESCALATED or CLOSED",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "OPEN",
+                                "IN_REVIEW",
+                                "ESCALATED",
+                                "CLOSED"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "severity",
+                        "in": "query",
+                        "description": "LOW, MEDIUM, HIGH or CRITICAL",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "enum": [
+                                "LOW",
+                                "MEDIUM",
+                                "HIGH",
+                                "CRITICAL"
+                            ]
+                        }
+                    },
+                    {
+                        "name": "ruleCode",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "customerId",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    {
+                        "name": "minScore",
+                        "in": "query",
+                        "description": "Only alerts at or above this risk score",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int32"
+                        }
+                    },
+                    {
+                        "name": "page",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int32",
+                            "default": 0
+                        }
+                    },
+                    {
+                        "name": "size",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "format": "int32",
+                            "default": 25
+                        }
+                    },
+                    {
+                        "name": "sortBy",
+                        "in": "query",
+                        "description": "Property to sort by, e.g. riskScore or lastDetectedAt",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "riskScore"
+                        }
+                    },
+                    {
+                        "name": "direction",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "string",
+                            "default": "desc"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PageResponseAlertSummaryDto"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/alerts/{alertRef}": {
+            "get": {
+                "tags": [
+                    "Alerts"
+                ],
+                "summary": "Alert detail",
+                "description": "Full explanation, supporting evidence transactions and risk score breakdown.",
+                "operationId": "detail_1",
+                "parameters": [
+                    {
+                        "name": "alertRef",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Alert found",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AlertDetailDto"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "No such alert",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/AlertDetailDto"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/rules": {
+            "get": {
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "List all detection rules with their current configuration",
+                "operationId": "rules",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/RuleDto"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/fx-rates": {
+            "get": {
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "Exchange-rate table used for base-currency normalisation",
+                "operationId": "fxRates",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "content": {
+                            "*/*": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/FxRate"
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/admin/jurisdictions/{countryCode}": {
+            "delete": {
+                "tags": [
+                    "Administration"
+                ],
+                "summary": "Deactivate a jurisdiction listing",
+                "description": "Deactivates rather than deletes \u2014 historical alerts citing this listing must remain explicable.",
+                "operationId": "deactivateJurisdiction",
+                "parameters": [
+                    {
+                        "name": "countryCode",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "FxRateRequest": {
+                "type": "object",
+                "properties": {
+                    "rateToBase": {
+                        "type": "number",
+                        "minimum": 1e-08
+                    }
+                },
+                "required": [
+                    "rateToBase"
+                ]
+            },
+            "FxRate": {
+                "type": "object",
+                "properties": {
+                    "currency": {
+                        "type": "string"
+                    },
+                    "rateToBase": {
+                        "type": "number"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "SingleTransactionRequest": {
+                "type": "object",
+                "description": "A single transaction for real-time evaluation.",
+                "properties": {
+                    "transactionId": {
+                        "type": "string",
+                        "maxLength": 40,
+                        "minLength": 0
+                    },
+                    "accountId": {
+                        "type": "string",
+                        "maxLength": 32,
+                        "minLength": 0
+                    },
+                    "customerId": {
+                        "type": "string",
+                        "description": "Optional; derived from the account when omitted"
+                    },
+                    "txnTimestamp": {
+                        "type": "string",
+                        "example": "2026-09-19T14:32:00",
+                        "minLength": 1
+                    },
+                    "direction": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "(?i)CREDIT|DEBIT"
+                    },
+                    "amount": {
+                        "type": "number",
+                        "minimum": 0.01
+                    },
+                    "currency": {
+                        "type": "string",
+                        "minLength": 1,
+                        "pattern": "[A-Za-z]{3}"
+                    },
+                    "channel": {
+                        "type": "string"
+                    },
+                    "txnType": {
+                        "type": "string"
+                    },
+                    "counterpartyName": {
+                        "type": "string"
+                    },
+                    "counterpartyAccount": {
+                        "type": "string"
+                    },
+                    "counterpartyBank": {
+                        "type": "string"
+                    },
+                    "counterpartyCountry": {
+                        "type": "string",
+                        "pattern": "|[A-Za-z]{2}"
+                    },
+                    "description": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "accountId",
+                    "amount",
+                    "currency",
+                    "direction",
+                    "transactionId",
+                    "txnTimestamp"
+                ]
+            },
+            "StreamingResponse": {
+                "type": "object",
+                "description": "Result of evaluating a single streamed transaction.",
+                "properties": {
+                    "transactionId": {
+                        "type": "string"
+                    },
+                    "accepted": {
+                        "type": "boolean"
+                    },
+                    "rulesTriggered": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "alertsCreated": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "detectionMs": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Round-trip detection latency in milliseconds"
+                    },
+                    "evaluatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "IngestionResponse": {
+                "type": "object",
+                "description": "Outcome of an ingestion run.",
+                "properties": {
+                    "batchRef": {
+                        "type": "string"
+                    },
+                    "entityType": {
+                        "type": "string"
+                    },
+                    "totalRecords": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "acceptedRecords": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "rejectedRecords": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "alertsGenerated": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "durationMs": {
+                        "type": "integer",
+                        "format": "int64",
+                        "description": "Wall-clock duration \u2014 evidences the bulk performance target"
+                    },
+                    "rejections": {
+                        "type": "array",
+                        "description": "Every rejected row with its reason, so failures are actionable",
+                        "items": {
+                            "$ref": "#/components/schemas/RejectionDto"
+                        }
+                    }
+                }
+            },
+            "RejectionDto": {
+                "type": "object",
+                "properties": {
+                    "rowNumber": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "recordKey": {
+                        "type": "string"
+                    },
+                    "errorType": {
+                        "type": "string"
+                    },
+                    "message": {
+                        "type": "string"
+                    }
+                }
+            },
+            "OpenRequest": {
+                "type": "object",
+                "description": "Open an investigation over one or more alerts for a single customer.",
+                "properties": {
+                    "customerId": {
+                        "type": "string",
+                        "minLength": 1
+                    },
+                    "title": {
+                        "type": "string",
+                        "maxLength": 200,
+                        "minLength": 0
+                    },
+                    "alertRefs": {
+                        "type": "array",
+                        "description": "Alert references to investigate together",
+                        "items": {
+                            "type": "string"
+                        },
+                        "minItems": 1
+                    },
+                    "narrative": {
+                        "type": "string",
+                        "maxLength": 4000,
+                        "minLength": 0
+                    }
+                },
+                "required": [
+                    "alertRefs",
+                    "customerId"
+                ]
+            },
+            "AlertSummaryDto": {
+                "type": "object",
+                "description": "Alert queue row. Customer PII is masked; use the detail endpoint for full values.",
+                "properties": {
+                    "alertRef": {
+                        "type": "string",
+                        "example": "ALT-20260919-A1B2C3D4"
+                    },
+                    "customerId": {
+                        "type": "string",
+                        "example": "CUST_00042"
+                    },
+                    "customerNameMasked": {
+                        "type": "string",
+                        "description": "Masked customer name",
+                        "example": "K****** S*****"
+                    },
+                    "accountMasked": {
+                        "type": "string",
+                        "description": "Masked account number",
+                        "example": "******0123"
+                    },
+                    "ruleCode": {
+                        "type": "string"
+                    },
+                    "typology": {
+                        "type": "string"
+                    },
+                    "riskScore": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "0-100 weighted risk score (business rule 7)",
+                        "example": 78
+                    },
+                    "severity": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "evidenceAmountBase": {
+                        "type": "number"
+                    },
+                    "evidenceCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "triggerCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "disposition": {
+                        "type": "string"
+                    },
+                    "firstDetectedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "lastDetectedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "AuditEntry": {
+                "type": "object",
+                "description": "One immutable audit record.",
+                "properties": {
+                    "action": {
+                        "type": "string"
+                    },
+                    "actor": {
+                        "type": "string"
+                    },
+                    "fromState": {
+                        "type": "string"
+                    },
+                    "toState": {
+                        "type": "string"
+                    },
+                    "details": {
+                        "type": "string"
+                    },
+                    "occurredAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "Detail": {
+                "type": "object",
+                "description": "Full case view including member alerts and audit trail.",
+                "properties": {
+                    "caseRef": {
+                        "type": "string"
+                    },
+                    "customerId": {
+                        "type": "string"
+                    },
+                    "customerNameMasked": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "priority": {
+                        "type": "string"
+                    },
+                    "aggregateRiskScore": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "assignedTo": {
+                        "type": "string"
+                    },
+                    "narrative": {
+                        "type": "string"
+                    },
+                    "disposition": {
+                        "type": "string"
+                    },
+                    "dispositionReason": {
+                        "type": "string"
+                    },
+                    "openedBy": {
+                        "type": "string"
+                    },
+                    "openedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "closedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "alerts": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AlertSummaryDto"
+                        }
+                    },
+                    "auditTrail": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AuditEntry"
+                        }
+                    }
+                }
+            },
+            "WatchlistCounterparty": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "normalizedName": {
+                        "type": "string"
+                    },
+                    "listType": {
+                        "type": "string"
+                    },
+                    "country": {
+                        "type": "string"
+                    },
+                    "notes": {
+                        "type": "string"
+                    },
+                    "active": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "HighRiskJurisdiction": {
+                "type": "object",
+                "properties": {
+                    "countryCode": {
+                        "type": "string"
+                    },
+                    "countryName": {
+                        "type": "string"
+                    },
+                    "category": {
+                        "type": "string"
+                    },
+                    "riskWeight": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "source": {
+                        "type": "string"
+                    },
+                    "active": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "TransitionRequest": {
+                "type": "object",
+                "description": "Case state transition. Closing requires a disposition and reason.",
+                "properties": {
+                    "targetStatus": {
+                        "type": "string",
+                        "enum": [
+                            "NEW",
+                            "INVESTIGATING",
+                            "PENDING_APPROVAL",
+                            "CLOSED"
+                        ]
+                    },
+                    "disposition": {
+                        "type": "string",
+                        "enum": [
+                            "TRUE_POSITIVE",
+                            "FALSE_POSITIVE",
+                            "ESCALATED_TO_SAR",
+                            "CLEARED_NO_ACTION"
+                        ]
+                    },
+                    "reason": {
+                        "type": "string",
+                        "maxLength": 4000,
+                        "minLength": 0
+                    }
+                },
+                "required": [
+                    "targetStatus"
+                ]
+            },
+            "AssignRequest": {
+                "type": "object",
+                "description": "Reassign a case to another analyst.",
+                "properties": {
+                    "assignee": {
+                        "type": "string",
+                        "minLength": 1
+                    }
+                },
+                "required": [
+                    "assignee"
+                ]
+            },
+            "AlertTransitionRequest": {
+                "type": "object",
+                "description": "Alert status transition. Closing requires a disposition and reason (business rule 6).",
+                "properties": {
+                    "targetStatus": {
+                        "type": "string",
+                        "enum": [
+                            "OPEN",
+                            "IN_REVIEW",
+                            "ESCALATED",
+                            "CLOSED"
+                        ]
+                    },
+                    "disposition": {
+                        "type": "string",
+                        "description": "Required when targetStatus is CLOSED",
+                        "enum": [
+                            "TRUE_POSITIVE",
+                            "FALSE_POSITIVE",
+                            "ESCALATED_TO_SAR",
+                            "CLEARED_NO_ACTION"
+                        ]
+                    },
+                    "reason": {
+                        "type": "string",
+                        "description": "Required when targetStatus is CLOSED",
+                        "example": "Verified as salary payments",
+                        "maxLength": 2000,
+                        "minLength": 0
+                    }
+                },
+                "required": [
+                    "targetStatus"
+                ]
+            },
+            "AlertDetailDto": {
+                "type": "object",
+                "description": "Alert detail with evidence transactions and risk score breakdown.",
+                "properties": {
+                    "alertRef": {
+                        "type": "string"
+                    },
+                    "customerId": {
+                        "type": "string"
+                    },
+                    "customerName": {
+                        "type": "string"
+                    },
+                    "accountId": {
+                        "type": "string"
+                    },
+                    "ruleCode": {
+                        "type": "string"
+                    },
+                    "typology": {
+                        "type": "string"
+                    },
+                    "riskScore": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "severity": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "explanation": {
+                        "type": "string",
+                        "description": "Human-readable justification generated from the evidence"
+                    },
+                    "scoreBreakdown": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer",
+                            "format": "int32"
+                        },
+                        "description": "How the risk score was composed"
+                    },
+                    "evidence": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/EvidenceTransactionDto"
+                        }
+                    },
+                    "evidenceAmountBase": {
+                        "type": "number"
+                    },
+                    "triggerCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "disposition": {
+                        "type": "string"
+                    },
+                    "dispositionReason": {
+                        "type": "string"
+                    },
+                    "disposedBy": {
+                        "type": "string",
+                        "description": "Analyst who disposed the alert (business rule 6)"
+                    },
+                    "disposedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "caseRef": {
+                        "type": "string"
+                    },
+                    "firstDetectedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "lastDetectedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "EvidenceTransactionDto": {
+                "type": "object",
+                "properties": {
+                    "transactionId": {
+                        "type": "string"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "direction": {
+                        "type": "string"
+                    },
+                    "amount": {
+                        "type": "number"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "amountBase": {
+                        "type": "number"
+                    },
+                    "channel": {
+                        "type": "string"
+                    },
+                    "counterpartyName": {
+                        "type": "string"
+                    },
+                    "counterpartyCountry": {
+                        "type": "string"
+                    }
+                }
+            },
+            "RuleUpdateRequest": {
+                "type": "object",
+                "description": "Partial rule update \u2014 omitted fields are left unchanged.",
+                "properties": {
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "weight": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Base contribution to the risk score, 0-100"
+                    },
+                    "severity": {
+                        "type": "string",
+                        "enum": [
+                            "LOW",
+                            "MEDIUM",
+                            "HIGH",
+                            "CRITICAL"
+                        ]
+                    },
+                    "params": {
+                        "type": "object",
+                        "additionalProperties": {},
+                        "description": "Rule-specific thresholds and time windows"
+                    }
+                }
+            },
+            "RuleDto": {
+                "type": "object",
+                "properties": {
+                    "ruleCode": {
+                        "type": "string"
+                    },
+                    "name": {
+                        "type": "string"
+                    },
+                    "typology": {
+                        "type": "string"
+                    },
+                    "enabled": {
+                        "type": "boolean"
+                    },
+                    "weight": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "severity": {
+                        "type": "string"
+                    },
+                    "params": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    },
+                    "updatedBy": {
+                        "type": "string"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "BatchSummary": {
+                "type": "object",
+                "description": "Ingestion batch summary with rejected-row detail.",
+                "properties": {
+                    "batchRef": {
+                        "type": "string"
+                    },
+                    "entityType": {
+                        "type": "string"
+                    },
+                    "source": {
+                        "type": "string"
+                    },
+                    "totalRecords": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "acceptedRecords": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "rejectedRecords": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "alertsGenerated": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "startedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "finishedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "durationMs": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "initiatedBy": {
+                        "type": "string"
+                    },
+                    "rejections": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/RejectionDto"
+                        }
+                    }
+                }
+            },
+            "StatsDto": {
+                "type": "object",
+                "properties": {
+                    "totalAlerts": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "totalCases": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "totalTransactions": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "totalCustomers": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "alertsByStatus": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    "alertsBySeverity": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    "alertsByRule": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    "casesByStatus": {
+                        "type": "object",
+                        "additionalProperties": {
+                            "type": "integer",
+                            "format": "int64"
+                        }
+                    },
+                    "activeRules": {
+                        "type": "array",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "HeatmapCell": {
+                "type": "object",
+                "properties": {
+                    "customerId": {
+                        "type": "string"
+                    },
+                    "typology": {
+                        "type": "string"
+                    },
+                    "peakRiskScore": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "alertCount": {
+                        "type": "integer",
+                        "format": "int64"
+                    }
+                }
+            },
+            "Masked": {
+                "type": "object",
+                "description": "Customer with PII masked \u2014 safe for list views and any authenticated analyst.",
+                "properties": {
+                    "customerId": {
+                        "type": "string"
+                    },
+                    "nameMasked": {
+                        "type": "string",
+                        "example": "K****** S*****"
+                    },
+                    "nationalIdMasked": {
+                        "type": "string",
+                        "example": "*****4821"
+                    },
+                    "emailMasked": {
+                        "type": "string",
+                        "example": "k******@g****.com"
+                    },
+                    "phoneMasked": {
+                        "type": "string",
+                        "example": "+91-******2955"
+                    },
+                    "city": {
+                        "type": "string"
+                    },
+                    "country": {
+                        "type": "string"
+                    },
+                    "customerSegment": {
+                        "type": "string"
+                    },
+                    "kycStatus": {
+                        "type": "string"
+                    },
+                    "riskRating": {
+                        "type": "string"
+                    },
+                    "politicallyExposed": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "TimelineEntry": {
+                "type": "object",
+                "description": "Chronological transaction activity for the customer timeline view.",
+                "properties": {
+                    "transactionId": {
+                        "type": "string"
+                    },
+                    "timestamp": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "accountId": {
+                        "type": "string"
+                    },
+                    "direction": {
+                        "type": "string"
+                    },
+                    "amount": {
+                        "type": "number"
+                    },
+                    "currency": {
+                        "type": "string"
+                    },
+                    "amountBase": {
+                        "type": "number"
+                    },
+                    "channel": {
+                        "type": "string"
+                    },
+                    "counterpartyName": {
+                        "type": "string"
+                    },
+                    "counterpartyCountry": {
+                        "type": "string"
+                    },
+                    "alertRefs": {
+                        "type": "array",
+                        "description": "Alert references this transaction is evidence for",
+                        "items": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "Full": {
+                "type": "object",
+                "description": "Full customer KYC detail. Requires SENIOR_ANALYST (business rule 8).",
+                "properties": {
+                    "customerId": {
+                        "type": "string"
+                    },
+                    "firstName": {
+                        "type": "string"
+                    },
+                    "lastName": {
+                        "type": "string"
+                    },
+                    "fullName": {
+                        "type": "string"
+                    },
+                    "nationalId": {
+                        "type": "string"
+                    },
+                    "email": {
+                        "type": "string"
+                    },
+                    "phoneNumber": {
+                        "type": "string"
+                    },
+                    "dateOfBirth": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "gender": {
+                        "type": "string"
+                    },
+                    "city": {
+                        "type": "string"
+                    },
+                    "state": {
+                        "type": "string"
+                    },
+                    "country": {
+                        "type": "string"
+                    },
+                    "postalCode": {
+                        "type": "string"
+                    },
+                    "occupation": {
+                        "type": "string"
+                    },
+                    "annualIncome": {
+                        "type": "number"
+                    },
+                    "employmentStatus": {
+                        "type": "string"
+                    },
+                    "customerSince": {
+                        "type": "string",
+                        "format": "date"
+                    },
+                    "customerSegment": {
+                        "type": "string"
+                    },
+                    "kycStatus": {
+                        "type": "string"
+                    },
+                    "riskRating": {
+                        "type": "string"
+                    },
+                    "politicallyExposed": {
+                        "type": "boolean"
+                    },
+                    "numComplaintsLastYear": {
+                        "type": "integer",
+                        "format": "int32"
+                    }
+                }
+            },
+            "PageResponseSummary": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/Summary"
+                        }
+                    },
+                    "page": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "totalElements": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "totalPages": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "first": {
+                        "type": "boolean"
+                    },
+                    "last": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "Summary": {
+                "type": "object",
+                "description": "Case summary for the case queue.",
+                "properties": {
+                    "caseRef": {
+                        "type": "string"
+                    },
+                    "customerId": {
+                        "type": "string"
+                    },
+                    "title": {
+                        "type": "string"
+                    },
+                    "status": {
+                        "type": "string"
+                    },
+                    "priority": {
+                        "type": "string"
+                    },
+                    "aggregateRiskScore": {
+                        "type": "integer",
+                        "format": "int32",
+                        "description": "Noisy-OR combination of member alert scores"
+                    },
+                    "assignedTo": {
+                        "type": "string"
+                    },
+                    "disposition": {
+                        "type": "string"
+                    },
+                    "openedBy": {
+                        "type": "string"
+                    },
+                    "openedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "updatedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "closedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    },
+                    "alertCount": {
+                        "type": "integer",
+                        "format": "int32"
+                    }
+                }
+            },
+            "AuditEntryDto": {
+                "type": "object",
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "entityType": {
+                        "type": "string"
+                    },
+                    "entityId": {
+                        "type": "string"
+                    },
+                    "action": {
+                        "type": "string"
+                    },
+                    "actor": {
+                        "type": "string"
+                    },
+                    "actorRoles": {
+                        "type": "string"
+                    },
+                    "fromState": {
+                        "type": "string"
+                    },
+                    "toState": {
+                        "type": "string"
+                    },
+                    "details": {
+                        "type": "string"
+                    },
+                    "occurredAt": {
+                        "type": "string",
+                        "format": "date-time"
+                    }
+                }
+            },
+            "PageResponseAuditEntryDto": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AuditEntryDto"
+                        }
+                    },
+                    "page": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "totalElements": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "totalPages": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "first": {
+                        "type": "boolean"
+                    },
+                    "last": {
+                        "type": "boolean"
+                    }
+                }
+            },
+            "PageResponseAlertSummaryDto": {
+                "type": "object",
+                "properties": {
+                    "content": {
+                        "type": "array",
+                        "items": {
+                            "$ref": "#/components/schemas/AlertSummaryDto"
+                        }
+                    },
+                    "page": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "size": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "totalElements": {
+                        "type": "integer",
+                        "format": "int64"
+                    },
+                    "totalPages": {
+                        "type": "integer",
+                        "format": "int32"
+                    },
+                    "first": {
+                        "type": "boolean"
+                    },
+                    "last": {
+                        "type": "boolean"
+                    }
+                }
+            }
+        },
+        "securitySchemes": {
+            "basicAuth": {
+                "type": "http",
+                "description": "HTTP Basic. Demo users: analyst / senior / admin.",
+                "scheme": "basic"
+            }
+        }
+    }
+}
