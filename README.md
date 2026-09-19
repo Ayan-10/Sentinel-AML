@@ -13,7 +13,6 @@ Built to the supplied problem statement (`Sentinel_AML__Building_Real-Time_Money
 | **Check the deliverables** — every requirement mapped to the file or command that proves it | **[`deliverables/DELIVERABLES.md`](deliverables/DELIVERABLES.md)** |
 | **See it work** — the full ingestion → detection → alert → case disposition flow | **[`deliverables/DEMO.md`](deliverables/DEMO.md)** |
 | Understand the architecture, set it up, or tune the rules | This README — the three sections below |
-| Go deeper: design rationale, ADRs, trade-offs considered and rejected | `docs/ARCHITECTURE.md` — an internal design record, **not a deliverable**; `docs/` is git-ignored, so it is not part of the repository |
 
 ---
 
@@ -21,11 +20,11 @@ Built to the supplied problem statement (`Sentinel_AML__Building_Real-Time_Money
 
 | Metric | Result | Requirement |
 |---|---|---|
-| 10,000 transactions ingested + detected | **1,650 ms** | < 120,000 ms |
-| Alerts generated | 2,201 | — |
+| 10,000 transactions ingested + detected | **1,581 ms** | < 120,000 ms |
+| Alerts generated | 2,533 | — |
 | Rejected records | 0 | — |
 | Application startup | 2.8 s | — |
-| Detection rules active | 6 | 5 typologies required |
+| Detection rules active | 6 (all firing) | 5 typologies required |
 | Laundering typologies in seed data | 6 | ≥ 3 required |
 
 The bulk figure is printed on every startup by `SeedDataLoader` and returned in the
@@ -159,10 +158,9 @@ Plus a sixth typology beyond the mandate: **repeated round-number amounts**
 
 ## Rule configuration approach
 
-Detection thresholds are tunable at runtime, without a redeployment.
-
-Detection thresholds are **not** in `application.properties`, because that file is baked into
-the image. They live in the `rule_config` table and are changed through the admin API:
+Detection thresholds are tunable at runtime, without a redeployment. They are deliberately
+**not** in `application.properties`, because that file is baked into the image. They live in the
+`rule_config` table and are changed through the admin API:
 
 ```bash
 # Loosen structuring to catch pairs rather than triples — takes effect immediately
